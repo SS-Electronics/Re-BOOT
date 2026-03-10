@@ -28,6 +28,7 @@ dist/
 *.hex
 *.axf
 *.app
+re-boot
 
 ############################################################
 # Static / Dynamic Libraries
