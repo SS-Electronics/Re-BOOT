@@ -1,0 +1,74 @@
+#-----------------------------------------------------------
+# Project-related settings
+#-----------------------------------------------------------
+PROJECT_NAME           = "Re-BOOT [ Remote Boot assist ]"
+PROJECT_BRIEF          = "Firmware HEX file upload from HOST machine"
+OUTPUT_DIRECTORY       = docs
+CREATE_SUBDIRS         = NO
+OUTPUT_LANGUAGE        = English
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_STATIC         = YES
+FULL_PATH_NAMES        = NO
+STRIP_FROM_PATH        = ./include
+
+#-----------------------------------------------------------
+# Input settings
+#-----------------------------------------------------------
+INPUT                  = ./include ./kernel ./mm
+FILE_PATTERNS          = *.h *.c
+RECURSIVE              = YES
+EXCLUDE                = 
+EXCLUDE_SYMLINKS       = NO
+
+#-----------------------------------------------------------
+# Build-related settings
+#-----------------------------------------------------------
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_LATEX         = NO
+GENERATE_RTF           = NO
+GENERATE_MAN           = NO
+GENERATE_XML           = NO
+GENERATE_TREEVIEW      = YES
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+
+#-----------------------------------------------------------
+# Source code handling
+#-----------------------------------------------------------
+INLINE_SOURCES         = YES
+SOURCE_BROWSER         = YES
+REFERENCES_RELATION    = YES
+REFERENCES_LINK_SOURCE = YES
+USE_MDFILE_AS_MAINPAGE = 
+
+#-----------------------------------------------------------
+# Grouping and diagrams
+#-----------------------------------------------------------
+HAVE_DOT               = NO
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+CLASS_DIAGRAMS         = NO
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
+
+#-----------------------------------------------------------
+# File extension handling
+#-----------------------------------------------------------
+EXTENSION_MAPPING      = 
+MARKDOWN_SUPPORT       = YES
+
+#-----------------------------------------------------------
+# Preprocessor options
+#-----------------------------------------------------------
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = NO
+PREDEFINED             = 
+
+#-----------------------------------------------------------
+# Misc
+#-----------------------------------------------------------
+GENERATE_TAGFILE       = 
