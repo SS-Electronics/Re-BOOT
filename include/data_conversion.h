@@ -1,10 +1,10 @@
 /* 
-File:        file_mgmt.h
+File:        data_conversion.h
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      file_mgmt.h  
-Info:        File related operations           
+Moudle:      data_conversion.h  
+Info:        Convert the data based on formats           
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -27,8 +27,8 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 
 
 
-#ifndef __FILE_MGMT_H__
-#define __FILE_MGMT_H__
+#ifndef __DATA_CONVERSION_H__
+#define __DATA_CONVERSION_H__
 
 
 #ifdef __cplusplus
@@ -36,20 +36,21 @@ extern "C" {
 #endif
 
 
-int parse_arguments(int argc, char *argv[], cmd_args_t *args);
+uint32_t hex_to_int(char * const hex, int len);
 
-int32_t get_file_size(char* const file_name);
 
-int read_hex_file(char * const filename,
-                  mem_pool_t * const buffer,
-                  int32_t line_len,
-                  int32_t * hex_base_address,
-                  uint32_t * hex_end_address,
-                  cmd_args_t *args);
+
+
+
+
+
+
+
 
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __MEM_MGMT_H__ */
+
+#endif /* __DATA_CONVERSION_H__ */

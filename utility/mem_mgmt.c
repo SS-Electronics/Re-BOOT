@@ -36,7 +36,7 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
  * @retval 0 Operation success
  *          
  */
-int32_t init_mem_pool(mem_pool_t * const buffer, uint32_t size)
+int32_t create_mem_pool(mem_pool_t * const buffer, uint32_t size)
 {
     buffer->data = (uint8_t *)malloc(size);
     buffer->size = size;
@@ -49,4 +49,23 @@ int32_t init_mem_pool(mem_pool_t * const buffer, uint32_t size)
     }
 
     return 0;
+}
+
+
+
+/**
+ * @file  main.c
+ * @brief Memory pool free
+ *
+ * @param buffer mem_pool_t constant pointer to container
+ *
+ * @return none
+ *          
+ */
+void free_mem_pool(mem_pool_t * const buffer)
+{
+    if(buffer->data != NULL)
+    {
+        free(buffer->data);
+    }    
 }

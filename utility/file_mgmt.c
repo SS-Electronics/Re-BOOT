@@ -29,14 +29,14 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 #include <unistd.h>
 #include <time.h>
+#include <data_conversion.h>
 
 /**
  * @brief Local Variables
  */
 static struct stat hex_file_stat;
 
-
-
+static FILE * hex_file_ptr;
 
 /**
  * @brief Parse command line arguments
@@ -80,6 +80,11 @@ int parse_arguments(int argc, char *argv[], cmd_args_t *args)
             if (i + 1 < argc)
                 args->reset = atoi(argv[++i]);
         }
+        else if (strcmp(argv[i], "-v") == 0)
+        {
+            if (i + 1 < argc)
+                args->verbose = atoi(argv[++i]);
+        }
     }
 
     /* Validate mandatory arguments */
@@ -101,7 +106,6 @@ int parse_arguments(int argc, char *argv[], cmd_args_t *args)
 }
 
 
-
 /**
  * @file  file_mgmt.c
  * @brief 
@@ -113,9 +117,13 @@ int parse_arguments(int argc, char *argv[], cmd_args_t *args)
  * @retval 0 Operation success
  *          
  */
-
 int32_t get_file_size(char* const file_name)
 {
+    char ch;
+    uint32_t lines = 0;
+    
+    hex_file_ptr = fopen(file_name, "r");
+
     if( file_name != NULL)
     {
         if( stat(file_name, &hex_file_stat) < 0)
@@ -138,13 +146,151 @@ int32_t get_file_size(char* const file_name)
             }
             else
             {
-                return (int32_t)hex_file_stat.st_size;
+                if(hex_file_ptr != NULL)
+                {
+                    while ((ch = fgetc(hex_file_ptr)) != EOF)
+                    {
+                        if (ch == '\n')
+                        {
+                            lines++;
+                        }    
+                    }
+                }
+
+                fclose(hex_file_ptr);
+
+                printf(" Total Lines %u\n", lines);
+                return (int32_t)lines;
             }
         }
     }
     else
     {
+        fclose(hex_file_ptr);
+
         return 0;
     }
+
+    
 }
 
+
+/**
+ * @file  main.c
+ * @brief Memory pool Init
+ *
+ * @param buffer mem_pool_t constant pointer to container
+ * @param size size of the memory in bytes
+ *
+ * @return int
+ * @retval 0 Operation success
+ *          
+ */
+int read_hex_file(char * const filename,
+                  mem_pool_t * const buffer,
+                  int32_t line_len,
+                  int32_t * hex_base_address,
+                  uint32_t * hex_end_address,
+                  cmd_args_t *args)
+{
+    char        line[MAX_CHAR_PER_LINE];
+    uint32_t    line_count = 0;
+    uint32_t    length;
+    uint32_t    address;
+    uint32_t    type;
+    uint32_t    byte_counter = 0;
+
+   uint32_t max_records = buffer->size / sizeof(hex_record_t);
+
+    /** buffer->data -> allocated memory block
+        Treat that block as hex_record_t arr[]
+    */
+    hex_record_t *record_arr = (hex_record_t *)buffer->data;
+
+    /** Open the file  */
+    hex_file_ptr = fopen(filename, "r");
+
+    if(hex_file_ptr == NULL)
+    {
+         
+        return EAGAIN;
+    }
+
+    while(fgets(line, sizeof(line), hex_file_ptr))
+    {
+        if(line[0] != ':')
+        {
+            continue; /** Not a valid hex record line */
+        }
+
+        
+        /** : ll aaaa tt [dd...] cc*/
+        length  = hex_to_int(line + 1, 2);
+        address = hex_to_int(line + 3, 4);
+        type    = hex_to_int(line + 7, 2);
+
+        /** Fill record structure */
+        record_arr[line_count].length = length;
+        record_arr[line_count].type   = type;
+        record_arr[line_count].checksum =
+            hex_to_int(line + 9 + (length * 2), 2);
+
+        /** Update extended address first */
+        if(type == 0x04)
+        {
+            *hex_base_address = (hex_to_int(line + 9, 4) << 16);
+        }
+
+        /** Absolute address */
+        record_arr[line_count].address = (*hex_base_address) + address;
+
+        /** Track end address (only for data records) */
+        if(type == 0x00)
+        {
+            /** Copy data bytes */
+            for(uint32_t i = 0; i < length; i++)
+            {
+                record_arr[line_count].data[i] =
+                    hex_to_int(line + 9 + (i * 2), 2);
+                    byte_counter++;
+            }
+
+            uint32_t end_addr =
+                record_arr[line_count].address + length;
+
+            if(end_addr > *hex_end_address)
+            {
+                *hex_end_address = end_addr;
+            }
+        }
+
+        if(args->verbose == VERBOSE_LEVEL_3)
+        {
+             printf("**************************************\n");
+             printf("Line[%u]       %s", line_count, line);
+             printf("Record[%u]     %02X 0x%08X %u %02X\n", \
+                            line_count, \
+                            record_arr[line_count].type, \
+                            record_arr[line_count].address, \
+                            record_arr[line_count].length, \
+                            record_arr[line_count].checksum);
+        }
+
+        /** Next record */
+        line_count++;
+
+        /** Prevent buffer overflow */
+        if(line_count >= max_records)
+        {
+            fclose(hex_file_ptr);
+            printf("hi");
+            return ENOMEM;
+        }
+    }
+
+    printf("Total Bytes: %u [ 0x%x -> 0x%x] \n\r", byte_counter, *hex_base_address, *hex_end_address);
+
+    /** Close the file */
+    fclose(hex_file_ptr);
+    return 0;
+}

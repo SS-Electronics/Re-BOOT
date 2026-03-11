@@ -1,10 +1,10 @@
 /* 
-File:        file_mgmt.h
+File:        data_conversion.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      file_mgmt.h  
-Info:        File related operations           
+Moudle:      data_conversion.c  
+Info:        Convert the data based on formats           
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -23,33 +23,25 @@ You should have received a copy of the GNU General Public License
 along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "app_types.h"
+#include "data_conversion.h"
 
 
 
-#ifndef __FILE_MGMT_H__
-#define __FILE_MGMT_H__
 
+/**
+ * @brief Convert ASCII hex string to integer
+ *
+ * @param hex Pointer to hex string
+ * @param len Number of characters to convert
+ *
+ * @return uint32_t Converted integer value
+ */
+uint32_t hex_to_int(char * const hex, int len)
+{
+    char buffer[16];
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+    strncpy(buffer, hex, len);
+    buffer[len] = '\0';
 
-
-int parse_arguments(int argc, char *argv[], cmd_args_t *args);
-
-int32_t get_file_size(char* const file_name);
-
-int read_hex_file(char * const filename,
-                  mem_pool_t * const buffer,
-                  int32_t line_len,
-                  int32_t * hex_base_address,
-                  uint32_t * hex_end_address,
-                  cmd_args_t *args);
-
-
-#ifdef __cplusplus
+    return strtoul(buffer, NULL, 16);
 }
-#endif
-
-#endif /* __MEM_MGMT_H__ */

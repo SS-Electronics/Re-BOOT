@@ -26,6 +26,8 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <app_config.h>
+#include <stdlib.h>
 
 /* ERROR List: https://www.chromium.org/chromium-os/developer-library/reference/linux-constants/errnos/*/
 #include <errno.h>
@@ -44,7 +46,7 @@ typedef struct
     /**
      * @brief Pointer to dynamically allocated memory
      */
-    uint8_t *data;
+    uint8_t * data;
 
     /**
      * @brief Total size of allocated memory
@@ -52,6 +54,52 @@ typedef struct
     uint32_t size;
 
 } mem_pool_t;
+
+/**
+ * @brief Structure representing one Intel HEX record
+ *
+ * Each record corresponds to a single line from the HEX file.
+ * It stores the address, number of data bytes, actual data,
+ * and checksum from that record.
+ */
+typedef struct
+{
+    /**
+     * @brief Start address of the record
+     *
+     * This is the absolute flash address after applying
+     * the extended linear address (type 04).
+     */
+    uint32_t address;
+
+    /**
+     * @brief Number of valid data bytes
+     */
+    uint8_t length;
+
+    /**
+     * @brief Data bytes contained in the record
+     *
+     * Maximum Intel HEX record data length is 255 bytes.
+     */
+    uint8_t data[255];
+
+    /**
+     * @brief Record type
+     *
+     * Common types:
+     * 00 = Data record
+     * 01 = End of file
+     * 04 = Extended linear address
+     */
+    uint8_t type;
+
+    /**
+     * @brief Record checksum
+     */
+    uint8_t checksum;
+
+} hex_record_t;
 
 
 /**
@@ -66,6 +114,7 @@ typedef struct
     int   node_id;     /**< Node ID (-n) */
     int   n_retry;     /**< Number of retries (-t) */
     int   reset;       /**< Reset flag (-r) */
+    int   verbose;     /**< verbose level (-r) */
 
 } cmd_args_t;
 

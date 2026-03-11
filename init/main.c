@@ -34,13 +34,15 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
  */
 static int32_t          status;
 static cmd_args_t       cmds;
+static int32_t          hex_file_lines;
 
+static uint32_t         hex_base_address;
+static uint32_t         hex_end_address;
 /**
  * @brief Memory related local variables
  */
 
 static mem_pool_t mem_pool_hex_file_head;
-
 
 
 
@@ -73,15 +75,36 @@ int main(int argc, char *argv[])
 
     if(status == 0) /** No error in commands so proceed */
     {
+        /** Get the file size and based on that the memory pool will be created */
+        hex_file_lines = get_file_size(cmds.file_path);
 
-        get_file_size(cmds.file_path);
+
+        /** Memory pool create for store each hex line recors */
+        status = create_mem_pool( &mem_pool_hex_file_head, (hex_file_lines * sizeof(hex_record_t)) );
+        if(status == 0)
+        {
+            status = read_hex_file(cmds.file_path, 
+                        &mem_pool_hex_file_head,
+                        hex_file_lines,
+                        &hex_base_address, &hex_end_address,
+                        &cmds);
+        }
+        
+        if( status == 0)
+        {
+            printf("HEX records created! ...");
+        }
 
 
-        /** Memory pool create for store hexfile based on HEX file size */
-    // status = init_mem_pool(&mem_pool_hex_file_head, 100);
 
 
 
     }
+
+
+
+    /** Free the allocated memory */
+    free_mem_pool(&mem_pool_hex_file_head);
+
     return 0;
 }

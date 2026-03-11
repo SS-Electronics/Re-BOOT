@@ -36,8 +36,8 @@ extern "C" {
 #endif
 
 
-int32_t init_mem_pool(mem_pool_t * const buffer, uint32_t size);
-
+int32_t     create_mem_pool(mem_pool_t * const buffer, uint32_t size);
+void        free_mem_pool(mem_pool_t * const buffer);
 
 
 

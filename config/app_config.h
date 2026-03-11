@@ -1,10 +1,10 @@
 /* 
-File:        file_mgmt.h
+File:        app_config.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      file_mgmt.h  
-Info:        File related operations           
+Moudle:      app_config.c  
+Info:        Entry Point of the firmware           
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -23,33 +23,22 @@ You should have received a copy of the GNU General Public License
 along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "app_types.h"
+
+#ifndef __APP_CONFIG_H__
+#define __APP_CONFIG_H__
+
+/**
+ * @brief verbose levels
+ */
+#define VERBOSE_LEVEL_1 1
+#define VERBOSE_LEVEL_2 2
+#define VERBOSE_LEVEL_3 3
+
+/**
+ * @brief Maximum character in a HEX file each line ':' to ':' length
+ */
+#define MAX_CHAR_PER_LINE   100
 
 
 
-#ifndef __FILE_MGMT_H__
-#define __FILE_MGMT_H__
-
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-
-int parse_arguments(int argc, char *argv[], cmd_args_t *args);
-
-int32_t get_file_size(char* const file_name);
-
-int read_hex_file(char * const filename,
-                  mem_pool_t * const buffer,
-                  int32_t line_len,
-                  int32_t * hex_base_address,
-                  uint32_t * hex_end_address,
-                  cmd_args_t *args);
-
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* __MEM_MGMT_H__ */
+#endif /* __APP_CONFIG_H__ */
