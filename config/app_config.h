@@ -3,8 +3,8 @@ File:        app_config.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      app_config.c  
-Info:        Entry Point of the firmware           
+Moudle:      Config  
+Info:        Application related configuration           
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -37,7 +37,7 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 /**
  * @brief Maximum character in a HEX file each line ':' to ':' length
  */
-#define MAX_CHAR_PER_LINE   100
+#define MAX_CHAR_PER_LINE   260
 
 
 

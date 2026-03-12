@@ -3,7 +3,7 @@ File:        file_mgmt.h
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      file_mgmt.h  
+Moudle:      Utility  
 Info:        File related operations           
 Dependency:  None
 

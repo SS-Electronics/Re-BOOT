@@ -1,10 +1,10 @@
 /* 
-File:        data_conversion.c
+File:        threads.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      Utility  
-Info:        Convert the data based on formats           
+Moudle:      Thread  
+Info:        Multithreading related operations and APIs           
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -23,25 +23,4 @@ You should have received a copy of the GNU General Public License
 along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "data_conversion.h"
-
-
-
-
-/**
- * @brief Convert ASCII hex string to integer
- *
- * @param hex Pointer to hex string
- * @param len Number of characters to convert
- *
- * @return uint32_t Converted integer value
- */
-uint32_t hex_to_int(char * const hex, int len)
-{
-    char buffer[16];
-
-    strncpy(buffer, hex, len);
-    buffer[len] = '\0';
-
-    return strtoul(buffer, NULL, 16);
-}
+#include "threads.h"

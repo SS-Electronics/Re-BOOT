@@ -3,7 +3,7 @@ File:        main.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      main.c  
+Moudle:      Init  
 Info:        Entry Point of the firmware           
 Dependency:  None
 
@@ -28,6 +28,7 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 #include "app_types.h"
 #include "file_mgmt.h"
 #include "mem_mgmt.h"
+#include "fsm.h"
 
 /**
  * @brief Operation related local variables
@@ -38,6 +39,14 @@ static int32_t          hex_file_lines;
 
 static uint32_t         hex_base_address;
 static uint32_t         hex_end_address;
+
+static uint32_t         current_line = 0;
+static uint32_t         pipeline_sector_size = 0;
+static uint32_t         target_address = 0;
+static uint32_t         pipeline_bytes = 0;
+
+
+
 /**
  * @brief Memory related local variables
  */
@@ -81,6 +90,7 @@ int main(int argc, char *argv[])
 
         /** Memory pool create for store each hex line recors */
         status = create_mem_pool( &mem_pool_hex_file_head, (hex_file_lines * sizeof(hex_record_t)) );
+        
         if(status == 0)
         {
             status = read_hex_file(cmds.file_path, 
@@ -96,6 +106,10 @@ int main(int argc, char *argv[])
         }
 
 
+          bootloader_run(hex_records,
+                   hex_file_lines,
+                   hex_base_address,
+                   hex_end_address);
 
 
 

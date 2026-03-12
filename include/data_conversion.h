@@ -3,7 +3,7 @@ File:        data_conversion.h
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      data_conversion.h  
+Moudle:      Utility  
 Info:        Convert the data based on formats           
 Dependency:  None
 
@@ -39,7 +39,7 @@ extern "C" {
 uint32_t hex_to_int(char * const hex, int len);
 
 
-
+uint32_t crc32_update(uint32_t crc, uint8_t data);
 
 
 

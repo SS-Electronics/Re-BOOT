@@ -1,10 +1,10 @@
 /* 
-File:        mem_mgmt.h
+File:        transport_layer.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      Utility  
-Info:        API export related to memory management           
+Moudle:      Comm  
+Info:        Finite State Machine related functions           
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -25,10 +25,8 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 
 #include "app_types.h"
 
-
-
-#ifndef __MEM_MGMT_H__
-#define __MEM_MGMT_H__
+#ifndef __TRANSPORT_LAYER_H__
+#define __TRANSPORT_LAYER_H__
 
 
 #ifdef __cplusplus
@@ -36,17 +34,25 @@ extern "C" {
 #endif
 
 
-int32_t     create_mem_pool(mem_pool_t * const buffer, uint32_t size);
-void        free_mem_pool(mem_pool_t * const buffer);
 
+int transport_connect(void);
 
+int transport_send(uint8_t *data, uint32_t len);
 
+int transport_receive(uint8_t *data, uint32_t max);
 
+int transport_send_reset(void);
 
+int transport_send_start(void);
 
+int pipeline_send(hex_record_t *records,
+                  int32_t total_lines,
+                  uint32_t *current_line,
+                  uint32_t sector_size);
 
-
-
+uint32_t pipeline_calculate_crc(hex_record_t *records,
+                                uint32_t start,
+                                uint32_t end);
 
 
 #ifdef __cplusplus
@@ -54,4 +60,4 @@ void        free_mem_pool(mem_pool_t * const buffer);
 #endif
 
 
-#endif /* __MEM_MGMT_H__ */
+#endif /* __TRANSPORT_LAYER_H__ */

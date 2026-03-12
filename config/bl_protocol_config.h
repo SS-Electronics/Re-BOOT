@@ -1,10 +1,10 @@
 /* 
-File:        data_conversion.c
+File:        bl_protocol_config.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      Utility  
-Info:        Convert the data based on formats           
+Moudle:      app_config.c  
+Info:        Protocol related configuration           
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -23,25 +23,29 @@ You should have received a copy of the GNU General Public License
 along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "data_conversion.h"
 
-
-
+#ifndef __BL_PROTOCOL_CONFIG_H__
+#define __BL_PROTOCOL_CONFIG_H__
 
 /**
- * @brief Convert ASCII hex string to integer
- *
- * @param hex Pointer to hex string
- * @param len Number of characters to convert
- *
- * @return uint32_t Converted integer value
+ * @brief Protocol Commands
  */
-uint32_t hex_to_int(char * const hex, int len)
-{
-    char buffer[16];
+#define CMD_RESET_REQ          0x10
+#define CMD_PIPELINE_DATA      0x11
+#define CMD_ADDR_UPDATE        0x12
+#define CMD_PIPELINE_VERIFY    0x13
+#define CMD_START_APP          0x14
 
-    strncpy(buffer, hex, len);
-    buffer[len] = '\0';
+#define RESP_ACK               0x79
+#define RESP_NACK              0x1F
 
-    return strtoul(buffer, NULL, 16);
-}
+#define RESP_PIPE_INFO         0x21
+#define RESP_PIPELINE_CRC      0x22
+
+/**
+ * @brief Maximum retries if the user didn't provide any input
+ */
+#define MAX_RETRY              2
+
+
+#endif /* __BL_PROTOCOL_CONFIG_H__ */

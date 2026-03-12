@@ -3,7 +3,7 @@ File:        mem_mgmt.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      mem_mgmt.c  
+Moudle:      Utility  
 Info:        Memory related operations           
 Dependency:  None
 

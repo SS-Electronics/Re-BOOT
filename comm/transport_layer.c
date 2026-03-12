@@ -1,10 +1,11 @@
 /* 
-File:        data_conversion.c
+File:        transport_layer.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      Utility  
-Info:        Convert the data based on formats           
+Moudle:      Comm  
+Info:        Switching Communication betwwen any 
+             communication protocol, allowing a generic structure            
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -23,25 +24,30 @@ You should have received a copy of the GNU General Public License
 along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "data_conversion.h"
+#include "transport_layer.h"
 
 
 
-
-/**
- * @brief Convert ASCII hex string to integer
- *
- * @param hex Pointer to hex string
- * @param len Number of characters to convert
- *
- * @return uint32_t Converted integer value
- */
-uint32_t hex_to_int(char * const hex, int len)
+uint32_t build_packet(hex_record_t *rec, uint8_t *out)
 {
-    char buffer[16];
+    uint32_t idx = 0;
 
-    strncpy(buffer, hex, len);
-    buffer[len] = '\0';
+    out[idx++] = 0x01; // WRITE_CMD
+    out[idx++] = rec->length;
 
-    return strtoul(buffer, NULL, 16);
+    out[idx++] = (rec->address >> 24) & 0xFF;
+    out[idx++] = (rec->address >> 16) & 0xFF;
+    out[idx++] = (rec->address >> 8) & 0xFF;
+    out[idx++] = rec->address & 0xFF;
+
+    for(int i = 0; i < rec->length; i++)
+        out[idx++] = rec->data[i];
+
+    uint8_t crc = 0;
+    for(int i = 0; i < idx; i++)
+        crc ^= out[i];
+
+    out[idx++] = crc;
+
+    return idx;
 }

@@ -3,7 +3,7 @@ File:        file_mgmt.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      file_mgmt.c  
+Moudle:      Utility  
 Info:        File related operations           
 Dependency:  None
 
@@ -159,7 +159,7 @@ int32_t get_file_size(char* const file_name)
 
                 fclose(hex_file_ptr);
 
-                printf(" Total Lines %u\n", lines);
+                printf("Total Lines %u\n", lines);
                 return (int32_t)lines;
             }
         }
@@ -196,9 +196,10 @@ int read_hex_file(char * const filename,
     char        line[MAX_CHAR_PER_LINE];
     uint32_t    line_count = 0;
     uint32_t    length;
-    uint32_t    address;
+    uint32_t    address, base_address = 0;
     uint32_t    type;
     uint32_t    byte_counter = 0;
+    uint8_t     first_seg_add_flag = 1;
 
    uint32_t max_records = buffer->size / sizeof(hex_record_t);
 
@@ -238,11 +239,17 @@ int read_hex_file(char * const filename,
         /** Update extended address first */
         if(type == 0x04)
         {
-            *hex_base_address = (hex_to_int(line + 9, 4) << 16);
+            base_address = (hex_to_int(line + 9, 4) << 16);
+
+            /** Only Store the first address flag */
+            if(first_seg_add_flag == 1)
+            {
+                first_seg_add_flag = 0;
+            }
         }
 
         /** Absolute address */
-        record_arr[line_count].address = (*hex_base_address) + address;
+        record_arr[line_count].address = base_address + address;
 
         /** Track end address (only for data records) */
         if(type == 0x00)
@@ -279,13 +286,8 @@ int read_hex_file(char * const filename,
         /** Next record */
         line_count++;
 
-        /** Prevent buffer overflow */
-        if(line_count >= max_records)
-        {
-            fclose(hex_file_ptr);
-            printf("hi");
-            return ENOMEM;
-        }
+        // /** Prevent buffer overflow */
+        // TODO: Need to implement based on buffer size
     }
 
     printf("Total Bytes: %u [ 0x%x -> 0x%x] \n\r", byte_counter, *hex_base_address, *hex_end_address);

@@ -119,5 +119,4 @@ typedef struct
 } cmd_args_t;
 
 
-
 #endif /* __APP_TYPES_H__ */
