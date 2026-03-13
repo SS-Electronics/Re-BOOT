@@ -35,3 +35,26 @@ void send_window()
         win.in_flight++;
     }
 }
+
+
+void boot_rx_handler(packet_t *pkt)
+{
+    switch(pkt->type)
+    {
+        case PKT_TARGET_INFO:
+            fsm_dispatch(&fsm, fsm_event_create(EVT_TARGET_INFO, pkt));
+        break;
+
+        case PKT_SEG_ACK:
+            fsm_dispatch(&fsm, fsm_event_create(EVT_SEG_ACK, pkt));
+        break;
+
+        case PKT_CRC_OK:
+            fsm_dispatch(&fsm, fsm_event_create(EVT_CRC_OK, pkt));
+        break;
+
+        case PKT_APP_ACK:
+            fsm_dispatch(&fsm, fsm_event_create(EVT_APP_ACK, pkt));
+        break;
+    }
+}

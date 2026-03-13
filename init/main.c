@@ -27,12 +27,17 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 
 #include "app_types.h"
 #include "global.h"
+
 #include "drv_file_write.h"
-#include "threads.h"
-#include "queues.h"
+
 #include "file_mgmt.h"
 #include "mem_mgmt.h"
+
+#include "threads.h"
+#include "queues.h"
+
 #include "fsm.h"
+#include "fsm_table.h"
 
 
 /**
@@ -50,8 +55,11 @@ static uint32_t         pipeline_sector_size = 0;
 static uint32_t         target_address = 0;
 static uint32_t         pipeline_bytes = 0;
 
+/**
+ * @brief Memory related local variables
+ */
 
-
+static fsm_t booloader_fsm;
 /**
  * @brief Memory related local variables
  */
@@ -81,17 +89,17 @@ int main(int argc, char *argv[])
     /** Parse commadline arguments */
     status = parse_arguments(argc, argv, &cmds);
 
-        /** Start the log file writing  */
-    if( fileio_open(&handle_log_file, "./re-boot.log", FILEIO_WRITE) != EXIT_SUCCESS )
-    {
-        printf("[ ERR ] Log file can not be created! ...\n"); 
-    }
-
     if(status == 0) /** No error in commands so proceed */
     {
+
+        /** Start the log file writing  */
+        if( fileio_open(&handle_log_file, "./re-boot.log", FILEIO_WRITE) != EXIT_SUCCESS )
+        {
+            printf("[ ERR ] Log file can not be created! ...\n"); 
+        }
+
         /** Get the file size and based on that the memory pool will be created */
         hex_file_lines = get_file_size(cmds.file_path);
-
 
         /** Memory pool create for store each hex line recors */
         status = create_mem_pool( &mem_pool_hex_file_head, (hex_file_lines * sizeof(hex_record_t)) );
@@ -112,17 +120,37 @@ int main(int argc, char *argv[])
         }
 
 
-        //   bootloader_run(hex_records,
-        //            hex_file_lines,
-        //            hex_base_address,
-        //            hex_end_address);
 
 
+    fsm_init(&fsm,
+             &ST_INIT_STATE,
+             table,
+             sizeof(table)/sizeof(table[0]),
+             NULL);
 
+    /* Start firmware update */
+
+    fsm_dispatch(&fsm, fsm_event_create(EVT_START, NULL));
+
+    while (1)
+    {
+        transport_poll();   /* RX packets */
+
+        timer_poll();       /* timeout events */
+
+        fsm_run(&fsm);      /* process FSM */
     }
 
 
 
+        /** Finite State Machine loop */
+        while(true)
+        {
+
+        }
+
+    }
+    
     /** Free the allocated memory */
     free_mem_pool(&mem_pool_hex_file_head);
 

@@ -87,6 +87,11 @@ int parse_arguments(int argc, char *argv[], cmd_args_t *args)
             if (i + 1 < argc)
                 args->verbose = atoi(argv[++i]);
         }
+        else if (strcmp(argv[i], "-i") == 0)
+        {
+            if (i + 1 < argc)
+                args->interface = argv[++i];
+        }
     }
 
     /* Validate mandatory arguments */

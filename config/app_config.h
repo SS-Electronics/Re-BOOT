@@ -39,6 +39,10 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
  */
 #define MAX_CHAR_PER_LINE   260
 
+/**
+ * @brief FSM Event queue Size
+ */
+#define QSIZE 128
 
 
 #endif /* __APP_CONFIG_H__ */
