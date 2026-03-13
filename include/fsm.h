@@ -57,33 +57,32 @@ struct fsm_state;
 struct fsm;
 
 /**
-
 * @brief FSM event object
 *
 * Events are dispatched to the FSM to trigger state transitions.
 * Events can optionally carry user data.
-  */
-  typedef struct fsm_event
-  {
-  uint32_t type;            /**< Event identifier */
-  void *data;               /**< Optional user payload */
-  struct fsm_event *next;   /**< Internal queue linkage */
+*/
+typedef struct fsm_event
+{
+    uint32_t type;            /**< Event identifier */
+    void *data;               /**< Optional user payload */
+    struct fsm_event *next;   /**< Internal queue linkage */
 
 } fsm_event_t;
 
-/**
 
+/**
 * @brief Transition action callback
 *
 * Called when a transition occurs.
 *
 * @param event  Pointer to triggering event
 * @param fsm    FSM instance
-  */
+*/
 typedef void (*fsm_action_t)(fsm_event_t *event, struct fsm *fsm);
 
-/**
 
+/**
 * @brief State entry/exit callback
 *
 * Entry is called when entering the state.
@@ -91,62 +90,66 @@ typedef void (*fsm_action_t)(fsm_event_t *event, struct fsm *fsm);
 *
 * @param state  Current state
 * @param fsm    FSM instance
-  */
+*/
 typedef void (*fsm_entry_exit_t)(struct fsm_state *state, struct fsm *fsm);
 
-/**
 
+/**
 * @brief FSM state descriptor
 *
 * Represents a single state in the state machine.
 * States can optionally have a parent to support hierarchical FSM design.
   */
-  typedef struct fsm_state
-  {
-  uint32_t id;                    /**< Unique state identifier */
+typedef struct fsm_state
+{
+    uint32_t id;                    /**< Unique state identifier */
 
-  struct fsm_state *parent;       /**< Parent state (for hierarchical FSM) */
+    struct fsm_state *parent;       /**< Parent state (for hierarchical FSM) */
 
-  fsm_entry_exit_t on_entry;      /**< Entry handler */
-  fsm_entry_exit_t on_exit;       /**< Exit handler */
+    fsm_entry_exit_t on_entry;      /**< Entry handler */
+    fsm_entry_exit_t on_exit;       /**< Exit handler */
 
-} fsm_state_t;
+}fsm_state_t;
+
 
 /**
-
 * @brief FSM transition table entry
 *
 * Defines a transition from one state to another when a specific
 * event is received.
   */
-  typedef struct
-  {
-  fsm_state_t *from;      /**< Source state */
-  uint32_t event;         /**< Trigger event ID */
-  fsm_state_t *to;        /**< Destination state */
+typedef struct
+{
+    fsm_state_t *from;      /**< Source state */
+    uint32_t event;         /**< Trigger event ID */
+    fsm_state_t *to;        /**< Destination state */
 
-  fsm_action_t action;    /**< Optional transition action */
+    fsm_action_t action;    /**< Optional transition action */
 
 } fsm_transition_t;
 
-/**
 
+/**
 * @brief FSM runtime context
 *
 * Maintains the runtime state of the finite state machine.
   */
-  typedef struct fsm
-  {
-  fsm_state_t *current_state;        /**< Current active state */
+typedef struct fsm
+{
+    fsm_state_t *current_state;        /**< Current active state */
 
-  const fsm_transition_t *table;     /**< Transition table */
-  size_t table_size;                 /**< Number of transitions */
+    const fsm_transition_t *table;     /**< Transition table */
+    size_t table_size;                 /**< Number of transitions */
 
-  void *user_data;                   /**< User-defined context */
+    void *user_data;                   /**< User-defined context */
 
-  /* Internal event queue */
-  fsm_event_t *queue_head;           /**< Event queue head */
-  fsm_event_t *queue_tail;           /**< Event queue tail */
+    /* Internal event queue */
+    fsm_event_t *queue_head;           /**< Event queue head */
+    fsm_event_t *queue_tail;           /**< Event queue tail */
+
+#if(USE_THREAD_SAFE_FSM == 1)
+    mutex_t lock;
+#endif
 
 } fsm_t;
 
@@ -214,7 +217,7 @@ typedef void (*fsm_entry_exit_t)(struct fsm_state *state, struct fsm *fsm);
   void fsm_run(fsm_t *fsm);
 
 
-  
+
 #ifdef __cplusplus
 }
 #endif

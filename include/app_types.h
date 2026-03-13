@@ -123,23 +123,5 @@ typedef struct
 
 } cmd_args_t;
 
-static struct
-{
-    bl_state_t state;
-
-    hex_record_t *records;
-    uint32_t record_count;
-
-    pipeline_builder_t pipeline;
-
-    uint16_t sector_size;
-    uint16_t segment_size;
-
-    uint32_t current_sector;
-    uint32_t offset;
-
-    uint32_t in_flight;
-
-} ctx;
 
 #endif /* __APP_TYPES_H__ */

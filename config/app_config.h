@@ -45,4 +45,9 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 #define QSIZE 128
 
 
+/**
+ * @brief Mutex implementation in FSM
+ */
+#define USE_THREAD_SAFE_FSM 1
+
 #endif /* __APP_CONFIG_H__ */

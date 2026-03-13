@@ -114,6 +114,10 @@ void fsm_init(fsm_t *fsm,
     fsm->queue_head = NULL;
     fsm->queue_tail = NULL;
 
+#if(USE_THREAD_SAFE_FSM == 1)
+    mutex_init(&fsm->lock);
+#endif
+
     /* Call entry handler of initial state */
     if (initial_state->on_entry)
     {
@@ -136,7 +140,11 @@ static void fsm_queue_push(fsm_t *fsm, fsm_event_t *event)
     {
         return;
     }
-        
+    
+#if(USE_THREAD_SAFE_FSM == 1)
+    mutex_lock(&fsm->lock);
+#endif
+
     if (!fsm->queue_head)
     {
         fsm->queue_head = fsm->queue_tail = event;
@@ -146,6 +154,11 @@ static void fsm_queue_push(fsm_t *fsm, fsm_event_t *event)
         fsm->queue_tail->next = event;
         fsm->queue_tail = event;
     }
+
+#if(USE_THREAD_SAFE_FSM == 1)
+    mutex_unlock(&fsm->lock);
+#endif
+
 }
 
 
@@ -164,17 +177,25 @@ static fsm_event_t* fsm_queue_pop(fsm_t *fsm)
     {
         return NULL;
     }
+#if(USE_THREAD_SAFE_FSM == 1)
+    mutex_lock(&fsm->lock);
+#endif
 
     fsm_event_t *e = fsm->queue_head;
 
-    fsm->queue_head = e->next;
-
-    if (!fsm->queue_head)
+    if (e)
     {
-        fsm->queue_tail = NULL;
+        fsm->queue_head = e->next;
+        if (!fsm->queue_head)
+            fsm->queue_tail = NULL;
     }
 
-    e->next = NULL;
+#if(USE_THREAD_SAFE_FSM == 1)
+    mutex_unlock(&fsm->lock);
+#endif
+
+    if (e)
+        e->next = NULL;
 
     return e;
 }

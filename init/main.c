@@ -73,6 +73,27 @@ static mem_pool_t mem_pool_hex_file_head;
 
 
 
+ /**
+ * @brief Bootloader context accross all states
+ */
+static struct
+{
+    hex_record_t *records;
+    uint32_t record_count;
+    pipeline_builder_t pipeline;
+    uint16_t sector_size;
+    uint16_t segment_size;
+    uint32_t current_sector;
+    uint32_t offset;
+    uint32_t in_flight;
+} bootloader_context;
+
+
+
+
+
+
+
 /**
  * @file  main.c
  * @brief Main entry point of the program
@@ -121,32 +142,19 @@ int main(int argc, char *argv[])
 
 
 
+        /* Init state machine */
+        fsm_init(&booloader_fsm,
+                &ST_INIT_STATE,
+                fsm_table,
+                sizeof(fsm_table)/sizeof(fsm_table[0]),
+                &bootloader_context);
 
-    fsm_init(&fsm,
-             &ST_INIT_STATE,
-             table,
-             sizeof(table)/sizeof(table[0]),
-             NULL);
+        /* Start Initialization state */
+        fsm_dispatch(&booloader_fsm, fsm_event_create(EVT_START, NULL));
 
-    /* Start firmware update */
-
-    fsm_dispatch(&fsm, fsm_event_create(EVT_START, NULL));
-
-    while (1)
-    {
-        transport_poll();   /* RX packets */
-
-        timer_poll();       /* timeout events */
-
-        fsm_run(&fsm);      /* process FSM */
-    }
-
-
-
-        /** Finite State Machine loop */
-        while(true)
+        while (1)
         {
-
+            fsm_run(&booloader_fsm);      /* process FSM */
         }
 
     }
