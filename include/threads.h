@@ -53,167 +53,153 @@ extern "C" {
 
 #include "app_types.h"
 
-
-
-
-/**
- * @defgroup thread_api Thread API
- * @{
- */
-/**
- * @brief Platform detection : Linux
- */
 #if defined(__linux__)
 
 #include <pthread.h>
 
-/**
- * @brief Thread handle type
- */
-typedef pthread_t thread_handle_t;
-
-/**
- * @brief Thread ID type
- */
-typedef pthread_t thread_id_t;
-
-#endif
-
-/**
- * @brief Platform detection : Windows
- */
-#if defined(_WIN32) || defined(_WIN64)
+#elif defined(_WIN32) || defined(_WIN64)
 
 #include <windows.h>
 
-/**
- * @brief Thread handle type
- */
-typedef HANDLE thread_handle_t;
-
-/**
- * @brief Thread ID type
- */
-typedef DWORD thread_id_t;
-
 #endif
-
-
 
 /**
  * @brief Thread function prototype
- *
- * All threads must use this signature.
- *
- * @param arg User supplied argument
- * @return Thread return value
  */
+typedef void* (*thread_func_t)(void *arg);
 
-typedef void *(*thread_func_t)(void *);
+
+/**
+ * @brief Thread object
+ */
+typedef struct
+{
+#if defined(__linux__)
+    pthread_t handle;
+#elif defined(_WIN32) || defined(_WIN64)
+    HANDLE handle;
+    DWORD id;
+#endif
+} thread_t;
+
+
+/**
+ * @brief Mutex object
+ */
+typedef struct
+{
+#if defined(__linux__)
+    pthread_mutex_t handle;
+#elif defined(_WIN32) || defined(_WIN64)
+    CRITICAL_SECTION handle;
+#endif
+} mutex_t;
+
+
+/**
+ * @brief Condition variable
+ */
+typedef struct
+{
+#if defined(__linux__)
+    pthread_cond_t handle;
+#elif defined(_WIN32) || defined(_WIN64)
+    CONDITION_VARIABLE handle;
+#endif
+} cond_t;
+
 
 
 
 /**
- * @brief Create a new thread
+ * @brief Create a thread
  *
- * @param handle Pointer to thread handle
+ * @param thread Thread object
  * @param func Thread entry function
  * @param arg Argument passed to thread
  *
- * @return 0 on success, negative on failure
- */
-int thread_create(thread_handle_t *handle,
-                  thread_func_t func,
-                  void *arg);
-
-
-/**
- * @brief Wait for a thread to finish
- *
- * @param handle Thread handle
- *
  * @return 0 on success
  */
-int thread_join(thread_handle_t handle);
+int thread_create(thread_t *thread, thread_func_t func, void *arg);
 
 
 /**
- * @brief Terminate the calling thread
- *
- * @param retval Return value
+ * @brief Join a thread
  */
-void thread_exit(void *retval);
+int thread_join(thread_t *thread);
+
 
 /**
- * @}
+ * @brief Detach thread
  */
+int thread_detach(thread_t *thread);
 
-
- /**
- * @defgroup mutex_api Mutex API
- * @{
- */
 
 /**
- * @brief Mutex type
+ * @brief Sleep for milliseconds
  */
+void thread_sleep(uint32_t ms);
 
-#if defined(__linux__)
 
-typedef pthread_mutex_t mutex_t;
-
-#endif
-
-#if defined(_WIN32) || defined(_WIN64)
-
-typedef CRITICAL_SECTION mutex_t;
-
-#endif 
+/**
+ * @brief Yield processor
+ */
+void thread_yield(void);
 
 
 /**
  * @brief Initialize mutex
- *
- * @param m Mutex object
- *
- * @return 0 on success
  */
 int mutex_init(mutex_t *m);
 
 
 /**
  * @brief Lock mutex
- *
- * @param m Mutex object
- *
- * @return 0 on success
  */
-int mutex_lock(mutex_t *m);
+void mutex_lock(mutex_t *m);
 
 
 /**
  * @brief Unlock mutex
- *
- * @param m Mutex object
- *
- * @return 0 on success
  */
-int mutex_unlock(mutex_t *m);
+void mutex_unlock(mutex_t *m);
 
 
 /**
  * @brief Destroy mutex
- *
- * @param m Mutex object
- *
- * @return 0 on success
  */
-int mutex_destroy(mutex_t *m);
+void mutex_destroy(mutex_t *m);
 
 
 /**
- * @}
+ * @brief Initialize condition variable
  */
+int cond_init(cond_t *c);
+
+
+/**
+ * @brief Wait on condition
+ */
+void cond_wait(cond_t *c, mutex_t *m);
+
+
+/**
+ * @brief Signal one waiting thread
+ */
+void cond_signal(cond_t *c);
+
+
+/**
+ * @brief Broadcast to all threads
+ */
+void cond_broadcast(cond_t *c);
+
+
+/**
+ * @brief Destroy condition variable
+ */
+void cond_destroy(cond_t *c);
+
 
 #ifdef __cplusplus
 }

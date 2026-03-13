@@ -26,9 +26,12 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "app_types.h"
+#include "threads.h"
+#include "queues.h"
 #include "file_mgmt.h"
 #include "mem_mgmt.h"
 #include "fsm.h"
+
 
 /**
  * @brief Operation related local variables
@@ -54,10 +57,51 @@ static uint32_t         pipeline_bytes = 0;
 static mem_pool_t mem_pool_hex_file_head;
 
 
+queue_t q;
+
+void* producer(void *arg)
+{
+    int counter = 0;
+
+    while (1)
+    {
+        char *msg = malloc(64);
+
+        sprintf(msg, "Message %d", counter++);
+
+        printf("Producer: pushing %s\n", msg);
+
+        queue_push(&q, msg);
+
+        thread_sleep(1000); // produce every 1 second
+    }
+
+    return NULL;
+}
 
 
+void* consumer(void *arg)
+{
+    void *msg;
 
+    while (1)
+    {
+        if (queue_try_pop(&q, &msg))
+        {
+            printf("Consumer received: %s\n", (char*)msg);
+            free(msg);
+        }
+        else
+        {
+            /* Queue empty */
+            printf("Queue empty\n");
+        }
 
+        thread_sleep(300);
+    }
+
+    return NULL;
+}
 
 
 
@@ -79,6 +123,23 @@ static mem_pool_t mem_pool_hex_file_head;
  */
 int main(int argc, char *argv[])
 {
+
+    thread_t prod_thread;
+    thread_t cons_thread;
+
+    queue_init(&q);
+
+    /* Create threads */
+    thread_create(&prod_thread, producer, NULL);
+    thread_create(&cons_thread, consumer, NULL);
+
+    /* Wait for threads (runs forever) */
+    thread_join(&prod_thread);
+    thread_join(&cons_thread);
+
+    queue_destroy(&q);
+
+
     /** Parse commadline arguments */
     status = parse_arguments(argc, argv, &cmds);
 
@@ -106,10 +167,10 @@ int main(int argc, char *argv[])
         }
 
 
-          bootloader_run(hex_records,
-                   hex_file_lines,
-                   hex_base_address,
-                   hex_end_address);
+        //   bootloader_run(hex_records,
+        //            hex_file_lines,
+        //            hex_base_address,
+        //            hex_end_address);
 
 
 

@@ -75,7 +75,7 @@ typedef enum
 /**
  * @brief State Function Type: Each State return the next event
  */
-typedef event_t (*state_func_t)(void *ctx);
+typedef bl_event_t (*state_func_t)(void *ctx);
 
 
 
