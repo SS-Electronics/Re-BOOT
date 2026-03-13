@@ -34,10 +34,23 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 #define VERBOSE_LEVEL_2 2
 #define VERBOSE_LEVEL_3 3
 
+
+/**
+ * @brief Communication Types
+ */
+#define SERIAL 1
+#define TCP 2
+
+
 /**
  * @brief Maximum character in a HEX file each line ':' to ':' length
  */
 #define MAX_CHAR_PER_LINE   260
+
+/**
+ * @brief Max Payload to transport layer
+ */
+#define COMM_MAX_DATA  64
 
 /**
  * @brief FSM Event queue Size

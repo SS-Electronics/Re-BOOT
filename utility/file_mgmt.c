@@ -87,10 +87,20 @@ int parse_arguments(int argc, char *argv[], cmd_args_t *args)
             if (i + 1 < argc)
                 args->verbose = atoi(argv[++i]);
         }
-        else if (strcmp(argv[i], "-i") == 0)
+        else if (strcmp(argv[i], "-c") == 0)
         {
             if (i + 1 < argc)
                 args->interface = argv[++i];
+        }
+        else if (strcmp(argv[i], "-i") == 0)
+        {
+            if (i + 1 < argc)
+                args->ip = argv[++i];
+        }
+        else if (strcmp(argv[i], "-p") == 0)
+        {
+            if (i + 1 < argc)
+                args->port = atoi(argv[++i]);
         }
     }
 
@@ -252,6 +262,7 @@ int read_hex_file(char * const filename,
             /** Only Store the first address flag */
             if(first_seg_add_flag == 1)
             {
+                *hex_base_address = base_address;
                 first_seg_add_flag = 0;
             }
         }

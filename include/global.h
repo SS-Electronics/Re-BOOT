@@ -34,16 +34,48 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 
 
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/**
+ * @brief Firmware update FSM states.
+ *
+ * These states represent the progress of the firmware
+ * transfer procedure.
+ */
+typedef enum
+{
+    ST_INIT = 0,        /**< Initial state before update starts */
+    ST_SEND_RESET,      /**< Send reset command to target device */
+    ST_BUILD_PIPELINE,  /**< Build sector transfer pipeline */
+    ST_SEND_WINDOW,     /**< Send segmented data window */
+    ST_VERIFY,          /**< Verify sector CRC */
+    ST_NEXT_SECTOR,     /**< Move to next sector */
+    ST_DONE             /**< Firmware update completed */
+} state_id_t;
+
+
+/**
+ * @brief Firmware update FSM events.
+ *
+ * Events trigger state transitions inside the FSM.
+ */
+typedef enum
+{
+    EVT_START = 1,      /**< Start update process */
+    EVT_TARGET_INFO,    /**< Target responded with device info */
+    EVT_SEG_ACK,        /**< A segment was acknowledged */
+    EVT_SECTOR_END,     /**< Last segment of sector sent */
+    EVT_CRC_OK,         /**< CRC verification successful */
+    EVT_APP_ACK         /**< Application acknowledged completion */
+} event_id_t;
 
 /**
  * @brief Log file write handle
  */
 extern fileio_t handle_log_file;
-
 
 
 

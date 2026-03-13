@@ -35,6 +35,7 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 
 /* ERROR List: https://www.chromium.org/chromium-os/developer-library/reference/linux-constants/errnos/*/
 #include <errno.h>
+#include "app_config.h"
 
 #define FLAG_SET    1
 #define FLAG_RESET  0
@@ -116,6 +117,8 @@ typedef struct
      */
     char *file_path;   /**< HEX file path (-f) */
     char *interface;   /**< HEX file path (-i) */
+    char* ip;
+    uint32_t port;
     int   node_id;     /**< Node ID (-n) */
     int   n_retry;     /**< Number of retries (-t) */
     int   reset;       /**< Reset flag (-r) */
@@ -123,5 +126,15 @@ typedef struct
 
 } cmd_args_t;
 
+/**
+ * @brief Generic communication packet
+ */
+typedef struct
+{
+    uint32_t command;          /**< Command identifier */
+    uint16_t length;           /**< Payload length */
+    uint8_t  data[COMM_MAX_DATA]; /**< Payload buffer */
+
+} comm_packet_t;
 
 #endif /* __APP_TYPES_H__ */

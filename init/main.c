@@ -146,13 +146,13 @@ int main(int argc, char *argv[])
         fsm_init(&booloader_fsm,
                 &ST_INIT_STATE,
                 fsm_table,
-                sizeof(fsm_table)/sizeof(fsm_table[0]),
+                fsm_table_size,
                 &bootloader_context);
 
         /* Start Initialization state */
         fsm_dispatch(&booloader_fsm, fsm_event_create(EVT_START, NULL));
 
-        while (1)
+        while (booloader_fsm.fsm_running)
         {
             fsm_run(&booloader_fsm);      /* process FSM */
         }

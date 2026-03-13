@@ -24,34 +24,30 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 */
 
 
+/**
+ * @file firmware_update_fsm.h
+ * @brief Firmware Update Finite State Machine definitions.
+ *
+ * This file defines the states, events, and state instances used by the
+ * firmware update FSM. The FSM controls the process of sending firmware
+ * sectors to a target device using a segmented transfer protocol.
+ *
+ * Workflow overview:
+ * 1. Initialize update session
+ * 2. Send reset command to target
+ * 3. Build sector pipeline
+ * 4. Send data window (segmented transfer)
+ * 5. Verify CRC
+ * 6. Move to next sector
+ * 7. Finish update
+ */
+
 #ifndef __FSM_TABLE_H__
 #define __FSM_TABLE_H__
 
-#include "app_config.h"
-#include "app_types.h"
+
 #include "fsm.h"
-
-
-typedef enum
-{
-    ST_INIT = 0,
-    ST_SEND_RESET,
-    ST_BUILD_PIPELINE,
-    ST_SEND_WINDOW,
-    ST_VERIFY,
-    ST_NEXT_SECTOR,
-    ST_DONE
-} state_id_t;
-
-typedef enum
-{
-    EVT_START = 1,
-    EVT_TARGET_INFO,
-    EVT_SEG_ACK,
-    EVT_SECTOR_END,
-    EVT_CRC_OK,
-    EVT_APP_ACK
-} event_id_t;
+#include "fsm_actions.h"
 
 
 #ifdef __cplusplus
@@ -59,55 +55,38 @@ extern "C" {
 #endif
 
 
-fsm_state_t ST_INIT_STATE        = {ST_INIT, NULL, NULL, NULL};
-fsm_state_t ST_SEND_RESET_STATE  = {ST_SEND_RESET, NULL, NULL, NULL};
-fsm_state_t ST_BUILD_PIPE_STATE  = {ST_BUILD_PIPELINE, NULL, NULL, NULL};
-fsm_state_t ST_SEND_WINDOW_STATE = {ST_SEND_WINDOW, NULL, NULL, NULL};
-fsm_state_t ST_VERIFY_STATE      = {ST_VERIFY, NULL, NULL, NULL};
-fsm_state_t ST_NEXT_SECTOR_STATE = {ST_NEXT_SECTOR, NULL, NULL, NULL};
-fsm_state_t ST_DONE_STATE        = {ST_DONE, NULL, NULL, NULL};
+/**
+ * @brief FSM state object declarations.
+ *
+ * Each state object represents a state in the FSM.
+ * Entry/exit/action callbacks can be attached if required.
+ */
+extern fsm_state_t ST_INIT_STATE;
+extern fsm_state_t ST_SEND_RESET_STATE;
+extern fsm_state_t ST_BUILD_PIPE_STATE;
+extern fsm_state_t ST_SEND_WINDOW_STATE;
+extern fsm_state_t ST_VERIFY_STATE;
+extern fsm_state_t ST_NEXT_SECTOR_STATE;
+extern fsm_state_t ST_DONE_STATE;
 
 
-extern fsm_transition_t fsm_table[] =
-{
-
-/* START UPDATE */
-{&ST_INIT_STATE, EVT_START,
- &ST_SEND_RESET_STATE, act_send_reset},
-
-/* TARGET INFO */
-{&ST_SEND_RESET_STATE, EVT_TARGET_INFO,
- &ST_BUILD_PIPE_STATE, act_target_info},
-
-/* BUILD PIPELINE */
-{&ST_BUILD_PIPE_STATE, EVT_START,
- &ST_SEND_WINDOW_STATE, act_send_window},
-
-/* SEND DATA WINDOW */
-{&ST_SEND_WINDOW_STATE, EVT_SEG_ACK,
- &ST_SEND_WINDOW_STATE, act_seg_ack},
-
-{&ST_SEND_WINDOW_STATE, EVT_SECTOR_END,
- &ST_VERIFY_STATE, act_crc_verify},
-
-/* VERIFY CRC */
-{&ST_VERIFY_STATE, EVT_CRC_OK,
- &ST_NEXT_SECTOR_STATE, act_next_sector},
-
-/* NEXT SECTOR */
-{&ST_NEXT_SECTOR_STATE, EVT_START,
- &ST_SEND_WINDOW_STATE, act_send_window},
-
-{&ST_NEXT_SECTOR_STATE, EVT_APP_ACK,
- &ST_DONE_STATE, act_done},
-
-};
-
-
+/**
+ * @brief Firmware update FSM transition table.
+ *
+ * Each entry defines:
+ * - Current state
+ * - Trigger event
+ * - Next state
+ * - Action function
+ *
+ * The FSM engine scans this table to determine the next
+ * transition during event dispatch.
+ */
+extern fsm_transition_t fsm_table[];
+extern const size_t fsm_table_size;
 
 #ifdef __cplusplus
 }
 #endif
-
 
 #endif /* __FSM_TABLE_H__ */

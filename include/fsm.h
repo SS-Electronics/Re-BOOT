@@ -136,6 +136,7 @@ typedef struct
   */
 typedef struct fsm
 {
+    int32_t fsm_running;
     fsm_state_t *current_state;        /**< Current active state */
 
     const fsm_transition_t *table;     /**< Transition table */

@@ -104,7 +104,7 @@ void fsm_init(fsm_t *fsm,
     {
         return;
     }
-    
+    fsm->fsm_running = 1;
     fsm->current_state = initial_state;
     fsm->table = table;
     fsm->table_size = table_size;
