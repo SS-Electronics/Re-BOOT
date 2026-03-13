@@ -1,10 +1,10 @@
 /* 
-File:        data_conversion.c
+File:        global.h
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      Utility  
-Info:        Convert the data based on formats           
+Moudle:      Init  
+Info:        Global handles           
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -23,42 +23,35 @@ You should have received a copy of the GNU General Public License
 along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "data_conversion.h"
+#ifndef __GLOBAL_H__
+#define __GLOBAL_H__
 
 
+#include "app_types.h"
+#include "threads.h"
+#include "queues.h"
+#include "drv_file_write.h"
+
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 
 /**
- * @brief Convert ASCII hex string to integer
- *
- * @param hex Pointer to hex string
- * @param len Number of characters to convert
- *
- * @return uint32_t Converted integer value
+ * @brief Log file write handle
  */
-uint32_t hex_to_int(char * const hex, int len)
-{
-    char buffer[16];
+extern fileio_t handle_log_file;
 
-    strncpy(buffer, hex, len);
-    buffer[len] = '\0';
 
-    return strtoul(buffer, NULL, 16);
+
+
+
+
+
+#ifdef __cplusplus
 }
+#endif
 
-
-uint32_t crc32(uint8_t *data,uint32_t len)
-{
-    uint32_t crc=0xFFFFFFFF;
-
-    for(uint32_t i=0;i<len;i++)
-    {
-        crc ^= data[i];
-
-        for(int j=0;j<8;j++)
-            crc = (crc>>1) ^
-            (0xEDB88320 & -(crc&1));
-    }
-
-    return ~crc;
-}
+#endif /* __GLOBAL_H__ */

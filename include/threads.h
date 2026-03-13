@@ -43,6 +43,28 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
  *
  */
 
+/**
+ * @file threads.h
+ * @brief Cross-platform threading abstraction layer.
+ *
+ * This module provides a minimal portable threading API that works on
+ * both Linux (POSIX pthread) and Windows (Win32 threads).
+ *
+ * It hides platform specific details and exposes a small set of APIs
+ * suitable for system software, embedded frameworks, and infrastructure
+ * components.
+ *
+ * Features:
+ * - Thread creation and management
+ * - Mutex synchronization
+ * - Condition variables
+ * - Thread sleep and yield
+ *
+ * Supported Platforms:
+ * - Linux (POSIX Threads)
+ * - Windows (Win32 API)
+ *
+ */
 
 #ifndef __THREADS_H__
 #define __THREADS_H__
@@ -54,152 +76,244 @@ extern "C" {
 #include "app_types.h"
 
 #if defined(__linux__)
-
 #include <pthread.h>
-
 #elif defined(_WIN32) || defined(_WIN64)
-
 #include <windows.h>
-
 #endif
 
+
 /**
- * @brief Thread function prototype
+ * @defgroup thread Thread API
+ * @brief Portable thread abstraction
+ * @{
+ */
+
+
+/**
+ * @brief Thread entry function prototype.
+ *
+ * Every thread must start execution from a function matching this
+ * prototype.
+ *
+ * @param arg Pointer passed during thread creation.
+ *
+ * @return Optional return value returned when thread exits.
  */
 typedef void* (*thread_func_t)(void *arg);
 
 
 /**
- * @brief Thread object
+ * @brief Thread object.
+ *
+ * This structure represents a thread handle in a platform-independent
+ * format.
  */
 typedef struct
 {
 #if defined(__linux__)
-    pthread_t handle;
+    pthread_t handle;        /**< POSIX thread handle */
 #elif defined(_WIN32) || defined(_WIN64)
-    HANDLE handle;
-    DWORD id;
+    HANDLE handle;           /**< Windows thread handle */
+    DWORD id;                /**< Windows thread identifier */
 #endif
 } thread_t;
 
 
 /**
- * @brief Mutex object
+ * @brief Mutex object.
+ *
+ * Provides mutual exclusion between multiple threads.
  */
 typedef struct
 {
 #if defined(__linux__)
-    pthread_mutex_t handle;
+    pthread_mutex_t handle;  /**< POSIX mutex */
 #elif defined(_WIN32) || defined(_WIN64)
-    CRITICAL_SECTION handle;
+    CRITICAL_SECTION handle; /**< Windows critical section */
 #endif
 } mutex_t;
 
 
 /**
- * @brief Condition variable
+ * @brief Condition variable object.
+ *
+ * Used for thread signaling and synchronization between producer
+ * and consumer threads.
  */
 typedef struct
 {
 #if defined(__linux__)
-    pthread_cond_t handle;
+    pthread_cond_t handle;       /**< POSIX condition variable */
 #elif defined(_WIN32) || defined(_WIN64)
-    CONDITION_VARIABLE handle;
+    CONDITION_VARIABLE handle;   /**< Windows condition variable */
 #endif
 } cond_t;
 
 
-
-
 /**
- * @brief Create a thread
+ * @brief Create a new thread.
  *
- * @param thread Thread object
- * @param func Thread entry function
- * @param arg Argument passed to thread
+ * This function creates a new thread and begins execution at the
+ * specified thread entry function.
  *
- * @return 0 on success
+ * @param thread Pointer to thread object.
+ * @param func Thread entry function.
+ * @param arg Argument passed to the thread function.
+ *
+ * @return
+ * - 0 : Success
+ * - Negative value : Failure
  */
 int thread_create(thread_t *thread, thread_func_t func, void *arg);
 
 
 /**
- * @brief Join a thread
+ * @brief Wait for a thread to terminate.
+ *
+ * This function blocks the calling thread until the specified thread
+ * exits.
+ *
+ * @param thread Pointer to thread object.
+ *
+ * @return
+ * - 0 : Success
+ * - Negative value : Failure
  */
 int thread_join(thread_t *thread);
 
 
 /**
- * @brief Detach thread
+ * @brief Detach a thread.
+ *
+ * After detaching, system resources used by the thread are released
+ * automatically when the thread terminates.
+ *
+ * @param thread Pointer to thread object.
+ *
+ * @return
+ * - 0 : Success
+ * - Negative value : Failure
  */
 int thread_detach(thread_t *thread);
 
 
 /**
- * @brief Sleep for milliseconds
+ * @brief Sleep the current thread.
+ *
+ * Suspends execution of the current thread for a specified number
+ * of milliseconds.
+ *
+ * @param ms Duration in milliseconds.
  */
 void thread_sleep(uint32_t ms);
 
 
 /**
- * @brief Yield processor
+ * @brief Yield the processor.
+ *
+ * Causes the current thread to voluntarily yield execution so that
+ * another runnable thread may run.
  */
 void thread_yield(void);
 
 
 /**
- * @brief Initialize mutex
+ * @brief Initialize a mutex.
+ *
+ * @param m Pointer to mutex object.
+ *
+ * @return
+ * - 0 : Success
+ * - Negative value : Failure
  */
 int mutex_init(mutex_t *m);
 
 
 /**
- * @brief Lock mutex
+ * @brief Lock a mutex.
+ *
+ * Blocks the calling thread until the mutex becomes available.
+ *
+ * @param m Pointer to mutex object.
  */
 void mutex_lock(mutex_t *m);
 
 
 /**
- * @brief Unlock mutex
+ * @brief Unlock a mutex.
+ *
+ * Releases a previously locked mutex.
+ *
+ * @param m Pointer to mutex object.
  */
 void mutex_unlock(mutex_t *m);
 
 
 /**
- * @brief Destroy mutex
+ * @brief Destroy a mutex.
+ *
+ * Releases resources associated with the mutex.
+ *
+ * @param m Pointer to mutex object.
  */
 void mutex_destroy(mutex_t *m);
 
 
 /**
- * @brief Initialize condition variable
+ * @brief Initialize a condition variable.
+ *
+ * @param c Pointer to condition variable object.
+ *
+ * @return
+ * - 0 : Success
+ * - Negative value : Failure
  */
 int cond_init(cond_t *c);
 
 
 /**
- * @brief Wait on condition
+ * @brief Wait on a condition variable.
+ *
+ * Atomically releases the mutex and blocks the thread until the
+ * condition variable is signaled.
+ *
+ * @param c Pointer to condition variable.
+ * @param m Pointer to associated mutex.
  */
 void cond_wait(cond_t *c, mutex_t *m);
 
 
 /**
- * @brief Signal one waiting thread
+ * @brief Signal a waiting thread.
+ *
+ * Wakes one thread waiting on the condition variable.
+ *
+ * @param c Pointer to condition variable.
  */
 void cond_signal(cond_t *c);
 
 
 /**
- * @brief Broadcast to all threads
+ * @brief Wake all waiting threads.
+ *
+ * Wakes every thread waiting on the condition variable.
+ *
+ * @param c Pointer to condition variable.
  */
 void cond_broadcast(cond_t *c);
 
 
 /**
- * @brief Destroy condition variable
+ * @brief Destroy condition variable.
+ *
+ * Releases resources associated with the condition variable.
+ *
+ * @param c Pointer to condition variable.
  */
 void cond_destroy(cond_t *c);
 
+
+/** @} */ /* end of thread group */
 
 #ifdef __cplusplus
 }

@@ -28,81 +28,74 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 #define __FSM_H__
 
 #include "app_types.h"
+#include "pipeline.h"
+#include "threads.h"
+#include "queues.h"
 
-/**
- * @brief Bootloader FSM States
- */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum
 {
-    ST_CONNECT = 0,
+    ST_INIT,
     ST_SEND_RESET,
-    ST_WAIT_PIPE_INFO,
-    ST_VERIFY_HEX_ADDR,
-    ST_SEND_PIPELINE,
+    ST_WAIT_INFO,
+    ST_BUILD_PIPELINE,
+    ST_SEND_WINDOW,
     ST_WAIT_ACK,
-    ST_WAIT_PIPELINE_CRC,
-    ST_VERIFY_PIPELINE,
-    ST_NEXT_PIPELINE,
-    ST_ADDR_UPDATE,
-    ST_START_APP,
-    ST_FINISHED,
+    ST_SECTOR_DONE,
+    ST_VERIFY,
+    ST_NEXT_SECTOR,
+    ST_APP_START,
+    ST_DONE,
     ST_ERROR
 
 } bl_state_t;
 
-
-/**
- * @brief Bootloader FSM Events
- */
 typedef enum
 {
-    EV_NONE = 0,
-    EV_CONNECT_OK,
-    EV_ACK,
-    EV_NACK,
-    EV_PIPE_INFO,
-    EV_PIPELINE_SENT,
-    EV_PIPELINE_CRC,
-    EV_CRC_OK,
-    EV_NEXT,
-    EV_ADDR_CHANGE,
-    EV_START_ACK,
-    EV_FAIL
+    EVT_START,
+    EVT_TARGET_INFO,
+    EVT_SEG_ACK,
+    EVT_TIMEOUT,
+    EVT_SECTOR_END,
+    EVT_CRC_OK,
+    EVT_APP_ACK
 
 } bl_event_t;
 
-
-/**
- * @brief State Function Type: Each State return the next event
- */
-typedef bl_event_t (*state_func_t)(void *ctx);
-
-
-
-
-
 typedef struct
+{
+    bl_event_t type;
+
+    uint16_t sector_size;
+    uint16_t segment_size;
+
+} event_msg_t;
+
+
+#define WINDOW_SIZE 8
+
+static struct
 {
     bl_state_t state;
 
     hex_record_t *records;
+    uint32_t record_count;
 
-    int32_t total_lines;
+    pipeline_builder_t pipeline;
 
-    uint32_t current_line;
+    uint16_t sector_size;
+    uint16_t segment_size;
 
-    uint32_t hex_base_addr;
-    uint32_t hex_end_addr;
+    uint32_t current_sector;
+    uint32_t offset;
 
-    uint32_t target_addr;
-    uint32_t sector_size;
+    uint32_t in_flight;
 
-    uint32_t pipeline_start;
-
-    uint8_t retry;
-
-} bl_ctx_t;
-
+} ctx;
 
 typedef struct
 {
@@ -110,22 +103,15 @@ typedef struct
     bl_event_t event;
     bl_state_t next;
 
-} fsm_transition_t;
+    void (*action)(event_msg_t*);
+
+} fsm_entry_t;
 
 
+void fsm_init(hex_record_t *records,uint32_t count);
+void fsm_post(event_msg_t *evt);
+void fsm_run();
 
-
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-
-
-void bootloader_run(hex_record_t *records,
-                    int32_t total_lines,
-                    uint32_t hex_base_addr,
-                    uint32_t hex_end_addr);
 
 
 

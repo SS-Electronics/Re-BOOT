@@ -1,10 +1,10 @@
 /* 
-File:        transport_layer.c
+File:        pipeline.h
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      Comm  
-Info:        Finite State Machine related functions           
+Moudle:      Utility  
+Info:        HEX Send pipeline utility           
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -23,40 +23,58 @@ You should have received a copy of the GNU General Public License
 along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "app_types.h"
-
-#ifndef __TRANSPORT_LAYER_H__
-#define __TRANSPORT_LAYER_H__
-
+#ifndef __PIPELINE_H__
+#define __PIPELINE_H__
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct
-{
-    uint8_t data[1024];
-    uint32_t len;
+#include "app_types.h"
 
-} packet_t;
 
 typedef struct
 {
-    int (*open)(const char *dev);
-    int (*send)(uint8_t *data, uint32_t len);
-    int (*recv)(uint8_t *data, uint32_t len);
-    void (*close)();
+    uint32_t base_addr;
 
-} transport_ops_t;
+    uint8_t *data;
+    uint8_t *valid;
 
-void transport_register(transport_ops_t *ops);
+    uint32_t size;
 
-int transport_send(uint8_t *data,uint32_t len);
-int transport_recv(uint8_t *data,uint32_t len);
+} sector_pipeline_t;
+
+typedef struct
+{
+    sector_pipeline_t *sectors;
+
+    uint32_t sector_count;
+    uint32_t sector_size;
+
+} pipeline_builder_t;
+
+void pipeline_build(
+        pipeline_builder_t *pb,
+        hex_record_t *records,
+        uint32_t record_count,
+        uint32_t sector_size);
+
+int pipeline_next_segment(
+        pipeline_builder_t *pb,
+        uint32_t sector_index,
+        uint32_t *offset,
+        uint32_t segment_size,
+        uint32_t *addr,
+        uint8_t *data);
+
+uint32_t pipeline_sector_crc(
+        pipeline_builder_t *pb,
+        uint32_t sector_index);
+
+
 
 #ifdef __cplusplus
 }
 #endif
 
-
-#endif /* __TRANSPORT_LAYER_H__ */
+#endif /* __PIPELINE_H__ */

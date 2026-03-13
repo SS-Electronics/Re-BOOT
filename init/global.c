@@ -1,11 +1,10 @@
 /* 
-File:        transport_layer.c
+File:        global.c
 Author:      Subhajit Roy  
              subhajitroy005@gmail.com 
 
-Moudle:      Comm  
-Info:        Switching Communication betwwen any 
-             communication protocol, allowing a generic structure            
+Moudle:      Init  
+Info:        Global handles           
 Dependency:  None
 
 This file is part of Re-BOOT Project.
@@ -24,28 +23,6 @@ You should have received a copy of the GNU General Public License
 along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "transport_layer.h"
+#include "global.h"
 
-
-static transport_ops_t *driver;
-
-void transport_register(transport_ops_t *ops)
-{
-    driver = ops;
-}
-
-int transport_send(uint8_t *data,uint32_t len)
-{
-    if(driver && driver->send)
-        return driver->send(data,len);
-
-    return -1;
-}
-
-int transport_recv(uint8_t *data,uint32_t len)
-{
-    if(driver && driver->recv)
-        return driver->recv(data,len);
-
-    return -1;
-}
+fileio_t handle_log_file;

@@ -30,6 +30,8 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdarg.h>
+#include <wchar.h>
 
 /* ERROR List: https://www.chromium.org/chromium-os/developer-library/reference/linux-constants/errnos/*/
 #include <errno.h>

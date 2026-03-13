@@ -30,6 +30,8 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <time.h>
 #include <data_conversion.h>
+#include "drv_file_write.h"
+#include "global.h"
 
 /**
  * @brief Local Variables
@@ -160,6 +162,7 @@ int32_t get_file_size(char* const file_name)
                 fclose(hex_file_ptr);
 
                 printf("Total Lines %u\n", lines);
+                fileio_printf(&handle_log_file,"Total Lines %u\n", lines);
                 return (int32_t)lines;
             }
         }

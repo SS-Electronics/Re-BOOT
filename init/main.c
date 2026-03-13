@@ -26,6 +26,8 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "app_types.h"
+#include "global.h"
+#include "drv_file_write.h"
 #include "threads.h"
 #include "queues.h"
 #include "file_mgmt.h"
@@ -56,56 +58,9 @@ static uint32_t         pipeline_bytes = 0;
 
 static mem_pool_t mem_pool_hex_file_head;
 
-
-queue_t q;
-
-void* producer(void *arg)
-{
-    int counter = 0;
-
-    while (1)
-    {
-        char *msg = malloc(64);
-
-        sprintf(msg, "Message %d", counter++);
-
-        printf("Producer: pushing %s\n", msg);
-
-        queue_push(&q, msg);
-
-        thread_sleep(1000); // produce every 1 second
-    }
-
-    return NULL;
-}
-
-
-void* consumer(void *arg)
-{
-    void *msg;
-
-    while (1)
-    {
-        if (queue_try_pop(&q, &msg))
-        {
-            printf("Consumer received: %s\n", (char*)msg);
-            free(msg);
-        }
-        else
-        {
-            /* Queue empty */
-            printf("Queue empty\n");
-        }
-
-        thread_sleep(300);
-    }
-
-    return NULL;
-}
-
-
-
-
+/**
+ * @brief Function definitions
+ */
 
 
 
@@ -123,25 +78,14 @@ void* consumer(void *arg)
  */
 int main(int argc, char *argv[])
 {
-
-    thread_t prod_thread;
-    thread_t cons_thread;
-
-    queue_init(&q);
-
-    /* Create threads */
-    thread_create(&prod_thread, producer, NULL);
-    thread_create(&cons_thread, consumer, NULL);
-
-    /* Wait for threads (runs forever) */
-    thread_join(&prod_thread);
-    thread_join(&cons_thread);
-
-    queue_destroy(&q);
-
-
     /** Parse commadline arguments */
     status = parse_arguments(argc, argv, &cmds);
+
+        /** Start the log file writing  */
+    if( fileio_open(&handle_log_file, "./re-boot.log", FILEIO_WRITE) != EXIT_SUCCESS )
+    {
+        printf("[ ERR ] Log file can not be created! ...\n"); 
+    }
 
     if(status == 0) /** No error in commands so proceed */
     {
@@ -163,7 +107,8 @@ int main(int argc, char *argv[])
         
         if( status == 0)
         {
-            printf("HEX records created! ...");
+            printf("HEX records created! ...\n");
+            fileio_printf(&handle_log_file,"HEX records created! ...\n");
         }
 
 
@@ -181,5 +126,11 @@ int main(int argc, char *argv[])
     /** Free the allocated memory */
     free_mem_pool(&mem_pool_hex_file_head);
 
-    return 0;
+    /** Close the log file  */
+    if(handle_log_file.handle != NULL)
+    {
+        fileio_close(&handle_log_file);
+    }
+
+    return EXIT_SUCCESS;
 }
