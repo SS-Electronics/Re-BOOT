@@ -202,24 +202,59 @@ int drv_serial_open(drv_serial_t *ctx,
                     const char *port,
                     uint32_t baudrate)
 {
-    ctx->fd = open(port, O_RDWR | O_NOCTTY);
+    if(!ctx || !port)
+        return -1;
 
-    if (ctx->fd < 0)
+    /* Open serial port */
+    ctx->fd = open(port, O_RDWR | O_NOCTTY | O_SYNC);
+    if(ctx->fd < 0)
         return -1;
 
     struct termios tty;
+    memset(&tty, 0, sizeof(tty));
 
-    if (tcgetattr(ctx->fd, &tty) != 0)
+    if(tcgetattr(ctx->fd, &tty) != 0)
         return -1;
 
-    /* NOTE: Currently fixed to 115200 */
+    /* Set baud rate (currently fixed to 115200) */
     cfsetospeed(&tty, B115200);
     cfsetispeed(&tty, B115200);
 
-    tty.c_cflag |= (CLOCAL | CREAD);
-    tty.c_cflag |= CS8;
+    /* 8-bit chars */
+    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
 
-    if (tcsetattr(ctx->fd, TCSANOW, &tty) != 0)
+    /* Enable receiver and set local mode */
+    tty.c_cflag |= (CLOCAL | CREAD);
+
+    /* Disable parity */
+    tty.c_cflag &= ~PARENB;
+
+    /* 1 stop bit */
+    tty.c_cflag &= ~CSTOPB;
+
+    /* No hardware flow control */
+    tty.c_cflag &= ~CRTSCTS;
+
+    /* Raw input */
+    tty.c_iflag &= ~(IXON | IXOFF | IXANY);
+    tty.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
+
+    /* Raw output */
+    tty.c_oflag = 0;
+
+    /* Disable canonical mode, echo, signals */
+    tty.c_lflag = 0;
+
+    /*
+    Read behavior
+    VMIN  = 0 → read returns immediately
+    VTIME = 1 → 100ms timeout
+    This is important so your RX thread can exit.
+    */
+    tty.c_cc[VMIN]  = 0;
+    tty.c_cc[VTIME] = 1;
+
+    if(tcsetattr(ctx->fd, TCSANOW, &tty) != 0)
         return -1;
 
     return 0;

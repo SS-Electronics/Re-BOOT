@@ -142,13 +142,15 @@ int transport_send(comm_packet_t *pkt);
  * @param[out] pkt
  * Pointer to packet structure that will contain the
  * received data.
+ * @param [ in ] thread_running_flag
+ * pointer to a flag after calling thread shutdown this func also should stop
  *
  * @return int
  * @retval >0 Number of bytes received
  * @retval 0  No data available
  * @retval -1 Receive error
  */
-int transport_receive(comm_packet_t *pkt);
+int transport_receive(comm_packet_t *pkt, int32_t * thread_running_flag);
 
 
 /** @} */

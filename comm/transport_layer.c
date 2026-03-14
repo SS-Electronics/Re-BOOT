@@ -40,31 +40,60 @@ static uint32_t  driver_type = 0;
  */
 int transport_init(cmd_args_t *cmds)
 {
-    if (strcmp(cmds->interface, "serial") == 0)
+    if(cmds->interface != NULL)
     {
-        driver_type = SERIAL;
+        if (strcmp(cmds->interface, "serial") == 0)
+        {
+            if(cmds-> ip != NULL)
+            {
+                driver_type = SERIAL;
 
-        /* Initialize serial driver */
-        return drv_serial_open(&handle_serial_driver,
-                               cmds->ip,   /* serial device path */
-                               115200);
-    }
-    else if (strcmp(cmds->interface, "tcp") == 0)
-    {
-        driver_type = TCP;
+                /* Initialize serial driver */
+                return drv_serial_open(&handle_serial_driver,
+                                    cmds->ip,   /* serial device path */
+                                    115200);
 
-        /* Initialize TCP driver */
-        return drv_tcp_open(&handle_tcp_driver,
-                            cmds->ip,
-                            cmds->port);
+                
+            }
+            else
+            {
+                printf("[ ERR ] SERIAL port not mentioned!...\n");
+                printf("Use: '-i ttyACM0' or '-i COM15'\n");   
+            } 
+        }
+        else if (strcmp(cmds->interface, "tcp") == 0)
+        {
+            if(cmds-> ip != NULL)
+            {
+                 driver_type = TCP;
+
+                /* Initialize TCP driver */
+                return drv_tcp_open(&handle_tcp_driver,
+                                    cmds->ip,
+                                    cmds->port);
+            }
+            else
+            {
+                printf("[ ERR ] IP or PORT not mentioned!...\n");
+                printf("Use: '-i 192.168.0.1 -p 5000'\n");   
+            }
+        }
+        else
+        {
+            printf("[ ERR ] Communication interface '%s' not valid!\n", cmds->interface);
+            printf("Use: 'serial' or 'tcp'\n");
+
+            return -1;
+        }
     }
     else
     {
-        printf("[ERR] Communication interface '%s' not valid!\n", cmds->interface);
-        printf("Use: 'serial' or 'tcp'\n");
+            printf("[ ERR ] Communication interface not provided!\n");
+            printf("Use: '-c serial' or '-c tcp'\n");
 
-        return -1;
+            return -1;
     }
+   
 }
 
 
@@ -134,7 +163,7 @@ int transport_send(comm_packet_t *pkt)
  * Frame format:
  * [:][cmd][len_hi][len_lo][data...][#]
  */
-int transport_receive(comm_packet_t *pkt)
+int transport_receive(comm_packet_t *pkt, int32_t * thread_running_flag)
 {
     if (!pkt)
         return -1;
@@ -145,7 +174,7 @@ int transport_receive(comm_packet_t *pkt)
 
     uint8_t byte;
 
-    while (1)
+    while (*thread_running_flag)
     {
         int n = -1;
 

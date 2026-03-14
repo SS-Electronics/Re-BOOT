@@ -38,14 +38,19 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 
 #include "fsm.h"
 #include "fsm_table.h"
-
+#include "comm_manager.h"
+#include "transport_layer.h"
 
 /**
  * @brief Operation related local variables
  */
+static int32_t          app_running = FLAG_SET;
 static int32_t          status;
 static cmd_args_t       cmds;
 static int32_t          hex_file_lines;
+static thread_t         handle_comm_rx_thread;
+static int32_t          comm_thread_running;
+         
 
 static uint32_t         hex_base_address;
 static uint32_t         hex_end_address;
@@ -86,10 +91,14 @@ static struct
     uint32_t current_sector;
     uint32_t offset;
     uint32_t in_flight;
+    uint8_t  thread_running;
 } bootloader_context;
 
 
-
+void handle_sigint(int sig)
+{
+    app_running = FLAG_RESET;
+}
 
 
 
@@ -107,16 +116,32 @@ static struct
  */
 int main(int argc, char *argv[])
 {
+    /** Add signal interrupt from OS  */
+    signal(SIGINT, handle_sigint);
+
     /** Parse commadline arguments */
     status = parse_arguments(argc, argv, &cmds);
 
     if(status == 0) /** No error in commands so proceed */
     {
+        /** Transport Layer Driver Initialization  */
+        status = transport_init(&cmds);
 
+        if(status != 0)
+        {
+            printf("[ ERR ] Not able to open comm port %s %s ...\n", cmds.interface, cmds.ip);
+            printf("Exiting...\n");
+
+            goto exit;
+        }
+
+        printf("hello");
         /** Start the log file writing  */
         if( fileio_open(&handle_log_file, "./re-boot.log", FILEIO_WRITE) != EXIT_SUCCESS )
         {
             printf("[ ERR ] Log file can not be created! ...\n"); 
+
+            goto exit;
         }
 
         /** Get the file size and based on that the memory pool will be created */
@@ -124,6 +149,11 @@ int main(int argc, char *argv[])
 
         /** Memory pool create for store each hex line recors */
         status = create_mem_pool( &mem_pool_hex_file_head, (hex_file_lines * sizeof(hex_record_t)) );
+
+        if(status != 0 )
+        {
+            goto exit;
+        }
         
         /* Inilialize the queues */
         queue_init(&handle_queue_receive_packets);
@@ -150,7 +180,9 @@ int main(int argc, char *argv[])
             goto exit;
         }
 
-        
+        /** Initialization of Threads */
+        comm_thread_running = FLAG_SET;
+        thread_create(&handle_comm_rx_thread, comm_rx_thread, &comm_thread_running);
 
         /* Init state machine */
         fsm_init(&booloader_fsm,
@@ -162,16 +194,33 @@ int main(int argc, char *argv[])
         /* Start Initialization state */
         fsm_dispatch(&booloader_fsm, fsm_event_create(EVT_START, NULL));
 
-        while (booloader_fsm.fsm_running)
+        while ( (booloader_fsm.fsm_running == FLAG_SET) && (app_running == FLAG_SET) )
         {
             act_fsm_signal_generation(&booloader_fsm);
             fsm_run(&booloader_fsm);      /* process FSM */
         }
+    }
+    else
+    {
+        printf("Invalid Options... Exititng...\n");
+        printf("For help ebter re-boot -h\n");
 
     }
     
+    printf("Close Interrupt received! Exiting...\n");
+    fileio_printf(&handle_log_file,"Close Interrupt received! Exiting...\n");
+
     /** Any case it will come this point to exit */
     exit:
+
+    /** Wait for child thread to exit */
+    comm_thread_running = FLAG_RESET;
+    thread_join(&handle_comm_rx_thread);
+
+
+
+    /** Close Tansport Layer  */
+    transport_close(&cmds);
 
     /* Terminate the queues */
     queue_destroy(&handle_queue_receive_packets);
@@ -184,6 +233,8 @@ int main(int argc, char *argv[])
     {
         fileio_close(&handle_log_file);
     }
+
+    printf("Exit Done! ...\n");
 
     return EXIT_SUCCESS;
 }

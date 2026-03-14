@@ -94,12 +94,14 @@ static comm_packet_t receive_info_packet;
  */
 void* comm_rx_thread(void *arg)
 {
-    while(true)
+    int32_t * thread_running_flag = (int32_t*) arg;
+
+    while(*thread_running_flag)
     {
         comm_packet_t pkt;
 
         /* Receive one packet from transport layer */
-        if(transport_receive(&pkt) > 0)
+        if(transport_receive(&pkt, thread_running_flag) > 0)
         {
             /* Allocate memory for packet to be stored in queue */
             comm_packet_t *packet_ptr = (comm_packet_t*)malloc(sizeof(comm_packet_t));
