@@ -20,9 +20,10 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License 
-along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
+along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "global.h"
 
 fileio_t handle_log_file;
+queue_t  handle_queue_receive_packets;

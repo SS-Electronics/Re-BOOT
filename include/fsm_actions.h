@@ -20,7 +20,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License 
-along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
+along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #ifndef __FSM_ACTIONS_H__
@@ -28,18 +28,23 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 
 #include "app_types.h"
 #include "global.h"
+#include "bl_protocol_config.h"
 
 #include "fsm.h"
 #include "threads.h"
 #include "queues.h"
 
+#include "transport_layer.h"
+
 #include "drv_file_write.h"
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-
+/* Action RX Command polling  */
+void act_fsm_signal_generation(fsm_t * fsm);
 
 /* Action function prototypes */
 

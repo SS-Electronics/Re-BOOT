@@ -20,7 +20,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License 
-along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
+along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 */
 
 
@@ -125,6 +125,9 @@ int main(int argc, char *argv[])
         /** Memory pool create for store each hex line recors */
         status = create_mem_pool( &mem_pool_hex_file_head, (hex_file_lines * sizeof(hex_record_t)) );
         
+        /* Inilialize the queues */
+        queue_init(&handle_queue_receive_packets);
+
         if(status == 0)
         {
             status = read_hex_file(cmds.file_path, 
@@ -139,8 +142,15 @@ int main(int argc, char *argv[])
             printf("HEX records created! ...\n");
             fileio_printf(&handle_log_file,"HEX records created! ...\n");
         }
+        else
+        {
+            printf("HEX records not created! Exiting ...\n");
+            fileio_printf(&handle_log_file,"HEX records not created! Exiting ...\n");
 
+            goto exit;
+        }
 
+        
 
         /* Init state machine */
         fsm_init(&booloader_fsm,
@@ -154,11 +164,18 @@ int main(int argc, char *argv[])
 
         while (booloader_fsm.fsm_running)
         {
+            act_fsm_signal_generation(&booloader_fsm);
             fsm_run(&booloader_fsm);      /* process FSM */
         }
 
     }
     
+    /** Any case it will come this point to exit */
+    exit:
+
+    /* Terminate the queues */
+    queue_destroy(&handle_queue_receive_packets);
+
     /** Free the allocated memory */
     free_mem_pool(&mem_pool_hex_file_head);
 

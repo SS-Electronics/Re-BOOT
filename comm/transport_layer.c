@@ -21,7 +21,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License 
-along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
+along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "transport_layer.h"
@@ -87,28 +87,37 @@ void transport_close(cmd_args_t *cmds)
 
 
 /**
- * @brief Send packet through active transport
+ * @brief Send packet through active transport in [:][cmd][len_hi][len_lo][data][#] format
  */
 int transport_send(comm_packet_t *pkt)
 {
+    if (!pkt || pkt->length > 2048 - 5) /* 1(:) +1(cmd)+2(len)+data+1(#) */
+        return -1;
+
     uint8_t frame[2048];
     uint16_t pos = 0;
 
-    if (pkt->length > sizeof(frame) - 4)
-        return -1;
+    /* Start delimiter ':' */
+    frame[pos++] = ':';
 
-    /* command */
-    memcpy(&frame[pos], &pkt->command, sizeof(pkt->command));
-    pos += sizeof(pkt->command);
+    /* Command */
+    frame[pos++] = (uint8_t)(pkt->command & 0xFF);
 
-    /* length */
-    memcpy(&frame[pos], &pkt->length, sizeof(pkt->length));
-    pos += sizeof(pkt->length);
+    /* Length: 2 bytes, big endian */
+    frame[pos++] = (uint8_t)((pkt->length >> 8) & 0xFF);
+    frame[pos++] = (uint8_t)(pkt->length & 0xFF);
 
-    /* payload */
-    memcpy(&frame[pos], pkt->data, pkt->length);
-    pos += pkt->length;
+    /* Payload */
+    if (pkt->length > 0)
+    {
+        memcpy(&frame[pos], pkt->data, pkt->length);
+        pos += pkt->length;
+    }
 
+    /* End delimiter '#' */
+    frame[pos++] = '#';
+
+    /* Send through active driver */
     if (driver_type == SERIAL)
         return drv_serial_tx(&handle_serial_driver, frame, pos);
 
@@ -120,38 +129,97 @@ int transport_send(comm_packet_t *pkt)
 
 
 /**
- * @brief Receive packet from active transport
+ * @brief Receive packet from active transport (blocking until full frame)
+ *
+ * Frame format:
+ * [:][cmd][len_hi][len_lo][data...][#]
  */
 int transport_receive(comm_packet_t *pkt)
 {
-    uint8_t buf[2048];
-
-    int n = -1;
-
-    if (driver_type == SERIAL)
-        n = drv_serial_rx(&handle_serial_driver, buf, sizeof(buf));
-
-    else if (driver_type == TCP)
-        n = drv_tcp_rx(&handle_tcp_driver, buf, sizeof(buf));
-
-    if (n <= 0)
+    if (!pkt)
         return -1;
 
-    uint16_t pos = 0;
+    static uint8_t  state = 0;
+    static uint16_t index = 0;
+    static uint16_t length = 0;
 
-    /* command */
-    memcpy(&pkt->command, &buf[pos], sizeof(pkt->command));
-    pos += sizeof(pkt->command);
+    uint8_t byte;
 
-    /* length */
-    memcpy(&pkt->length, &buf[pos], sizeof(pkt->length));
-    pos += sizeof(pkt->length);
+    while (1)
+    {
+        int n = -1;
 
-    if (pkt->length > sizeof(pkt->data))
-        return -1;
+        if (driver_type == SERIAL)
+            n = drv_serial_rx(&handle_serial_driver, &byte, 1);
+        else if (driver_type == TCP)
+            n = drv_tcp_rx(&handle_tcp_driver, &byte, 1);
 
-    /* payload */
-    memcpy(pkt->data, &buf[pos], pkt->length);
+        if (n <= 0)
+            continue; /* wait for next byte */
 
-    return pkt->length;
+        switch (state)
+        {
+            /* Wait for start delimiter ':' */
+            case 0:
+                if (byte == ':')
+                {
+                    state = 1;
+                }
+            break;
+
+            /* Command */
+            case 1:
+                pkt->command = byte;
+                state = 2;
+            break;
+
+            /* Length high byte */
+            case 2:
+                length = ((uint16_t)byte << 8);
+                state = 3;
+            break;
+
+            /* Length low byte */
+            case 3:
+                length |= byte;
+
+                if (length > sizeof(pkt->data))
+                {
+                    state = 0; /* invalid length */
+                    return -3;
+                }
+
+                pkt->length = length;
+                index = 0;
+
+                if (length == 0)
+                    state = 5;
+                else
+                    state = 4;
+            break;
+
+            /* Data bytes */
+            case 4:
+                pkt->data[index++] = byte;
+
+                if (index >= length)
+                    state = 5;
+
+             break;
+
+            /* End delimiter '#' */
+            case 5:
+                if (byte == '#')
+                {
+                    state = 0;
+                    return pkt->length; /* packet complete */
+                }
+                else
+                {
+                    state = 0; /* invalid frame */
+                    return -4;
+                }
+            break;
+        }
+    }
 }

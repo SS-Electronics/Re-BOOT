@@ -20,7 +20,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License 
-along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
+along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 */
 
 
@@ -62,5 +62,11 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
  * @brief Mutex implementation in FSM
  */
 #define USE_THREAD_SAFE_FSM 1
+
+/**
+ * @brief Maximum retries if the user didn't provide any input
+ */
+#define MAX_RETRY              2
+
 
 #endif /* __APP_CONFIG_H__ */

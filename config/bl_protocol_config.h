@@ -20,7 +20,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License 
-along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
+along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 */
 
 
@@ -36,16 +36,19 @@ along with FreeRTOS-KERNEL. If not, see <https://www.gnu.org/licenses/>.
 #define CMD_PIPELINE_VERIFY    0x13
 #define CMD_START_APP          0x14
 
-#define RESP_ACK               0x79
-#define RESP_NACK              0x1F
+#define RESP_TARGET_INFO       0x30
+#define RESP_SEG_ACK           0x31
+#define RESP_SEG_NACK          0x32
+#define RESP_CRC_ACK           0x33
+#define RESP_CRC_NACK          0x34
+#define RESP_SECTOR_WR_ACK     0x35
+#define RESP_SECTOR_WR_NACK    0x36
+#define RESP_APP_JUMP_ACK      0x37
+#define RESP_APP_JUMP_NACK     0x38
+#define RESP_PIPE_INFO         0x39
+#define RESP_PIPELINE_CRC      0x40
 
-#define RESP_PIPE_INFO         0x21
-#define RESP_PIPELINE_CRC      0x22
 
-/**
- * @brief Maximum retries if the user didn't provide any input
- */
-#define MAX_RETRY              2
 
 
 #endif /* __BL_PROTOCOL_CONFIG_H__ */
