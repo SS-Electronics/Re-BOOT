@@ -55,34 +55,91 @@ extern "C" {
 #endif
 
 
+/* ====================================================================
+   State object declarations
+   ==================================================================== */
+ 
 /**
- * @brief FSM state object declarations.
+ * @brief Initial idle state — FSM entry point.
  *
- * Each state object represents a state in the FSM.
- * Entry/exit/action callbacks can be attached if required.
+ * @c fsm_init() is called with a pointer to this state so the machine
+ * starts here before any event is dispatched.
  */
 extern fsm_state_t ST_INIT_STATE;
-extern fsm_state_t ST_SEND_RESET_STATE;
-extern fsm_state_t ST_BUILD_PIPE_STATE;
-extern fsm_state_t ST_SEND_WINDOW_STATE;
-extern fsm_state_t ST_VERIFY_STATE;
-extern fsm_state_t ST_NEXT_SECTOR_STATE;
-extern fsm_state_t ST_DONE_STATE;
-
-
+ 
 /**
- * @brief Firmware update FSM transition table.
+ * @brief Waiting for target bootloader info after CMD_RESET_REQ.
+ */
+extern fsm_state_t ST_SEND_RESET_STATE;
+ 
+/**
+ * @brief Pipeline construction state (visited once per session).
+ */
+extern fsm_state_t ST_BUILD_PIPE_STATE;
+ 
+/**
+ * @brief Segment-by-segment transmission state.
  *
- * Each entry defines:
- * - Current state
- * - Trigger event
- * - Next state
- * - Action function
+ * The FSM loops in this state, one segment per iteration, waiting
+ * for @c RESP_SEG_ACK between each send.
+ */
+extern fsm_state_t ST_SEND_WINDOW_STATE;
+ 
+/**
+ * @brief Sector CRC verification and flash write state.
+ */
+extern fsm_state_t ST_VERIFY_STATE;
+ 
+/**
+ * @brief Sector cursor advancement state.
  *
- * The FSM engine scans this table to determine the next
- * transition during event dispatch.
+ * Transitions back to @c ST_SEND_WINDOW_STATE for more sectors or
+ * forward to @c ST_APP_JUMP_STATE when all sectors are done.
+ */
+extern fsm_state_t ST_NEXT_SECTOR_STATE;
+ 
+/**
+ * @brief Application start state — waits for @c RESP_APP_JUMP_ACK.
+ *
+ * Added to model the final handshake after all sectors are written.
+ * Prevents the FSM from reaching @c ST_DONE before the target has
+ * confirmed the jump.
+ */
+extern fsm_state_t ST_APP_JUMP_STATE;
+ 
+/**
+ * @brief Terminal state — firmware update complete.
+ *
+ * @c fsm->fsm_running is cleared when this state is entered, causing
+ * the main loop to exit.
+ */
+extern fsm_state_t ST_DONE_STATE;
+ 
+ 
+/* ====================================================================
+   Transition table
+   ==================================================================== */
+ 
+/**
+ * @brief The firmware update FSM transition table.
+ *
+ * A flat array of @ref fsm_transition_t entries.  @c fsm_run() scans
+ * this array on every dispatched event and executes the first matching
+ * row.  @c fsm_table_size must be passed alongside this pointer to
+ * @c fsm_init() to bound the search.
+ *
+ * @see fsm_table.c for the full row-by-row documentation.
  */
 extern fsm_transition_t fsm_table[];
+ 
+/**
+ * @brief Number of valid entries in @ref fsm_table.
+ *
+ * Computed at compile time in @c fsm_table.c as:
+ * @code
+ *   sizeof(fsm_table) / sizeof(fsm_table[0])
+ * @endcode
+ */
 extern const size_t fsm_table_size;
 
 #ifdef __cplusplus

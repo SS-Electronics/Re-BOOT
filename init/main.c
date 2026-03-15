@@ -77,22 +77,7 @@ static mem_pool_t mem_pool_hex_file_head;
 
 
 
-
- /**
- * @brief Bootloader context accross all states
- */
-static struct
-{
-    hex_record_t *records;
-    uint32_t record_count;
-    pipeline_builder_t pipeline;
-    uint16_t sector_size;
-    uint16_t segment_size;
-    uint32_t current_sector;
-    uint32_t offset;
-    uint32_t in_flight;
-    uint8_t  thread_running;
-} bootloader_context;
+bootloader_ctx_t bootloader_context;
 
 
 void handle_sigint(int sig)
@@ -170,8 +155,11 @@ int main(int argc, char *argv[])
         
         if( status == 0)
         {
-            printf("HEX records created! ...\n");
-            fileio_printf(&handle_log_file,"HEX records created! ...\n");
+            bootloader_context.records      = (hex_record_t *)mem_pool_hex_file_head.data;
+            bootloader_context.record_count = (uint32_t)hex_file_lines;
+
+            printf("Number of HEX records created : %d! ...\n", hex_file_lines);
+            fileio_printf(&handle_log_file,"Number of HEX records created : %d! ...\n", hex_file_lines);
         }
         else
         {
