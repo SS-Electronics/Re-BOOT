@@ -196,8 +196,12 @@ int main(int argc, char *argv[])
 
     }
     
-    printf("Close Interrupt received! Exiting...\n");
-    fileio_printf(&handle_log_file,"Close Interrupt received! Exiting...\n");
+    if((app_running != FLAG_SET))
+    {
+        printf("Close Interrupt received! Exiting...\n");
+        fileio_printf(&handle_log_file,"Close Interrupt received! Exiting...\n");
+    }
+   
 
     /** Any case it will come this point to exit */
     exit:
