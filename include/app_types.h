@@ -132,10 +132,9 @@ typedef struct
  */
 typedef struct
 {
-    uint32_t command;          /**< Command identifier */
-    uint16_t length;           /**< Payload length */
-    uint8_t  data[COMM_MAX_DATA]; /**< Payload buffer */
-
+    uint8_t  command;
+    uint16_t length;
+    uint8_t  data[COMM_MAX_DATA];
 } comm_packet_t;
 
 #endif /* __APP_TYPES_H__ */

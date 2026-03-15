@@ -118,39 +118,82 @@ void transport_close(cmd_args_t *cmds);
 
 
 /**
- * @brief Send communication packet
+ * @brief Send a communication packet through the active transport.
  *
- * Serializes and transmits a communication packet using
- * the currently active transport driver.
+ * The packet is encoded into the following frame format before
+ * transmission:
  *
- * @param[in] pkt
- * Pointer to communication packet structure.
+ * @code
+ *  -----------------------------------------------------------
+ *  | ':' | CMD | LEN_H | LEN_L | DATA ... | CRC_H | CRC_L |
+ *  -----------------------------------------------------------
+ *    1B    1B     1B      1B       N B        1B      1B
+ * @endcode
+ *
+ * Where:
+ *  - ':'       : Start delimiter
+ *  - CMD       : Command identifier
+ *  - LEN_H/LEN_L : Payload length (big endian)
+ *  - DATA      : Payload bytes
+ *  - CRC       : CRC16-CCITT calculated over CMD + LEN + DATA
+ *
+ * The function automatically routes the frame to the active
+ * driver (Serial or TCP).
+ *
+ * @param[in] pkt Pointer to communication packet structure.
  *
  * @return int
  * @retval >0 Number of bytes transmitted
- * @retval -1 Transmission failed
+ * @retval -1 Invalid packet or driver not initialized
  */
 int transport_send(comm_packet_t *pkt);
 
 
 /**
- * @brief Receive communication packet
+ * @brief Receive a communication packet from the active transport.
  *
- * Receives and parses a packet from the underlying
- * communication driver.
+ * This function implements a byte-wise state machine parser that
+ * reconstructs a packet from the transport stream.
  *
- * @param[out] pkt
- * Pointer to packet structure that will contain the
- * received data.
- * @param [ in ] thread_running_flag
- * pointer to a flag after calling thread shutdown this func also should stop
+ * Expected frame format:
+ *
+ * @code
+ *  -----------------------------------------------------------
+ *  | ':' | CMD | LEN_H | LEN_L | DATA ... | CRC_H | CRC_L |
+ *  -----------------------------------------------------------
+ * @endcode
+ *
+ * The function validates the CRC before returning the packet.
+ *
+ * The parser operates continuously while the thread running flag
+ * remains set.
+ *
+ * @param[out] pkt Pointer to packet structure where received
+ *                 data will be stored.
+ * @param[in]  thread_running_flag Pointer to thread control flag.
+ *                                 Reception continues while this
+ *                                 value is non-zero.
  *
  * @return int
- * @retval >0 Number of bytes received
- * @retval 0  No data available
- * @retval -1 Receive error
+ * @retval >0  Payload length of the received packet
+ * @retval -1  Invalid argument or thread stopped
+ * @retval -3  Payload length exceeds buffer size
+ * @retval -5  CRC verification failed
  */
 int transport_receive(comm_packet_t *pkt, int32_t * thread_running_flag);
+
+/**
+ * @brief Flush the serial receive buffer.
+ *
+ * Continuously reads and discards bytes from the serial driver
+ * until no more data is available. This is useful for clearing
+ * stale or corrupted data before starting a new communication
+ * session.
+ *
+ * @return int
+ * @retval 0 Flush completed
+ */
+int transport_flush(void);
 
 
 /** @} */

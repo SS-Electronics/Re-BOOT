@@ -36,7 +36,27 @@ static uint32_t  driver_type = 0;
 
 
 /**
- * @brief Initialize transport interface
+ * @brief Initialize the transport communication interface.
+ *
+ * This function selects and initializes the transport driver based on
+ * the interface specified in the command arguments structure.
+ *
+ * Supported interfaces:
+ *  - "serial" : Uses serial communication (UART/TTY device)
+ *  - "tcp"    : Uses TCP socket communication
+ *
+ * For serial communication the `ip` field contains the device path
+ * (e.g. ttyACM0 or COM15).
+ *
+ * For TCP communication the `ip` field contains the IP address and
+ * the `port` field contains the destination port.
+ *
+ * @param[in] cmds Pointer to command argument structure containing
+ *                 interface type and connection parameters.
+ *
+ * @return int
+ * @retval 0   Initialization successful
+ * @retval <0  Initialization failed or invalid parameters
  */
 int transport_init(cmd_args_t *cmds)
 {
@@ -114,13 +134,33 @@ void transport_close(cmd_args_t *cmds)
     driver_type = 0;
 }
 
+static uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
+{
+    uint16_t crc = 0xFFFF;
+
+    for (uint16_t i = 0; i < len; i++)
+    {
+        crc ^= (uint16_t)data[i] << 8;
+
+        for (uint8_t j = 0; j < 8; j++)
+        {
+            if (crc & 0x8000)
+                crc = (crc << 1) ^ 0x1021;
+            else
+                crc <<= 1;
+        }
+    }
+
+    return crc;
+}
 
 /**
- * @brief Send packet through active transport in [:][cmd][len_hi][len_lo][data][#] format
+ * @brief Send packet through active transport in
+ * [:][cmd][len_hi][len_lo][data][crc_hi][crc_lo] format
  */
 int transport_send(comm_packet_t *pkt)
 {
-    if (!pkt || pkt->length > 2048 - 5) /* 1(:) +1(cmd)+2(len)+data+1(#) */
+    if (!pkt || pkt->length > 2048 - 6)
         return -1;
 
     uint8_t frame[2048];
@@ -130,11 +170,11 @@ int transport_send(comm_packet_t *pkt)
     frame[pos++] = ':';
 
     /* Command */
-    frame[pos++] = (uint8_t)(pkt->command & 0xFF);
+    frame[pos++] = pkt->command;
 
-    /* Length: 2 bytes, big endian */
-    frame[pos++] = (uint8_t)((pkt->length >> 8) & 0xFF);
-    frame[pos++] = (uint8_t)(pkt->length & 0xFF);
+    /* Length */
+    frame[pos++] = (pkt->length >> 8) & 0xFF;
+    frame[pos++] = pkt->length & 0xFF;
 
     /* Payload */
     if (pkt->length > 0)
@@ -143,8 +183,11 @@ int transport_send(comm_packet_t *pkt)
         pos += pkt->length;
     }
 
-    /* End delimiter '#' */
-    frame[pos++] = '#';
+    /* Calculate CRC over CMD+LEN+DATA */
+    uint16_t crc = crc16_ccitt(&frame[1], pkt->length + 3);
+
+    frame[pos++] = (crc >> 8) & 0xFF;
+    frame[pos++] = crc & 0xFF;
 
     /* Send through active driver */
     if (driver_type == SERIAL)
@@ -158,19 +201,19 @@ int transport_send(comm_packet_t *pkt)
 
 
 /**
- * @brief Receive packet from active transport (blocking until full frame)
- *
+ * @brief Receive packet from active transport
  * Frame format:
- * [:][cmd][len_hi][len_lo][data...][#]
+ * [:][cmd][len_hi][len_lo][data][crc_hi][crc_lo]
  */
-int transport_receive(comm_packet_t *pkt, int32_t * thread_running_flag)
+int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
 {
     if (!pkt)
         return -1;
 
-    static uint8_t  state = 0;
+    static uint8_t state = 0;
     static uint16_t index = 0;
     static uint16_t length = 0;
+    static uint16_t crc_rx = 0;
 
     uint8_t byte;
 
@@ -184,71 +227,90 @@ int transport_receive(comm_packet_t *pkt, int32_t * thread_running_flag)
             n = drv_tcp_rx(&handle_tcp_driver, &byte, 1);
 
         if (n <= 0)
-            continue; /* wait for next byte */
+            continue;
 
         switch (state)
         {
-            /* Wait for start delimiter ':' */
-            case 0:
-                if (byte == ':')
-                {
-                    state = 1;
-                }
-            break;
+        case 0: /* Wait ':' */
+            if (byte == ':')
+                state = 1;
+        break;
 
-            /* Command */
-            case 1:
-                pkt->command = byte;
-                state = 2;
-            break;
+        case 1: /* CMD */
+            pkt->command = byte;
+            state = 2;
+        break;
 
-            /* Length high byte */
-            case 2:
-                length = ((uint16_t)byte << 8);
-                state = 3;
-            break;
+        case 2: /* LEN_H */
+            length = ((uint16_t)byte << 8);
+            state = 3;
+        break;
 
-            /* Length low byte */
-            case 3:
-                length |= byte;
+        case 3: /* LEN_L */
+            length |= byte;
 
-                if (length > sizeof(pkt->data))
-                {
-                    state = 0; /* invalid length */
-                    return -3;
-                }
+            if (length > sizeof(pkt->data))
+            {
+                state = 0;
+                return -3;
+            }
 
-                pkt->length = length;
-                index = 0;
+            pkt->length = length;
+            index = 0;
 
-                if (length == 0)
-                    state = 5;
-                else
-                    state = 4;
-            break;
+            state = (length == 0) ? 5 : 4;
+        break;
 
-            /* Data bytes */
-            case 4:
-                pkt->data[index++] = byte;
+        case 4: /* DATA */
+            pkt->data[index++] = byte;
 
-                if (index >= length)
-                    state = 5;
+            if (index == length)
+                state = 5;
+        break;
 
-             break;
+        case 5: /* CRC_H */
+            crc_rx = ((uint16_t)byte << 8);
+            state = 6;
+        break;
 
-            /* End delimiter '#' */
-            case 5:
-                if (byte == '#')
-                {
-                    state = 0;
-                    return pkt->length; /* packet complete */
-                }
-                else
-                {
-                    state = 0; /* invalid frame */
-                    return -4;
-                }
-            break;
+        case 6:
+        {
+            crc_rx |= byte;
+
+            uint8_t buffer[2048];
+            uint16_t pos = 0;
+
+            buffer[pos++] = pkt->command;
+            buffer[pos++] = (pkt->length >> 8) & 0xFF;
+            buffer[pos++] = pkt->length & 0xFF;
+
+            memcpy(&buffer[pos], pkt->data, pkt->length);
+            pos += pkt->length;
+
+            uint16_t crc_calc = crc16_ccitt(buffer, pos);
+
+            uint16_t pkt_len = pkt->length;
+
+            /* reset parser */
+            state = 0;
+            index = 0;
+            length = 0;
+
+            if (crc_calc != crc_rx)
+                return -5;
+
+            return pkt_len;
+}
+        break;
         }
     }
+
+    return -1;
+}
+
+int transport_flush(void)
+{
+    uint8_t tmp;
+
+    while (drv_serial_rx(&handle_serial_driver, &tmp, 1) > 0);
 }

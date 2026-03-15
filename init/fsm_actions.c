@@ -73,7 +73,15 @@ void act_fsm_signal_generation(fsm_t *fsm)
         switch(pkt->command)
         {
             case RESP_TARGET_INFO:
-                fsm_dispatch(fsm, fsm_event_create(EVT_TARGET_INFO, pkt));
+
+                fsm_event_t *evt = fsm_event_create(EVT_TARGET_INFO, NULL);
+
+                /** Copy the target Info here */
+                evt->data = malloc(sizeof(comm_packet_t));
+                memcpy(evt->data, pkt, sizeof(comm_packet_t));
+
+                fsm_dispatch(fsm, evt);
+
             break;
 
             case RESP_SEG_ACK:
@@ -115,16 +123,22 @@ void act_fsm_signal_generation(fsm_t *fsm)
  */
 void act_send_reset(fsm_event_t *e, fsm_t *fsm)
 {
-    printf("[ HOST -> TARGET ] Reset Request sent! ...\n");
-    fileio_printf(&handle_log_file,"[ HOST -> TARGET ] Reset Request sent! ...\n");
-
     /* Build reset request packet */
     transmit_info_packet.command = CMD_RESET_REQ;
     transmit_info_packet.length  = 1;
     transmit_info_packet.data[0] = FLAG_SET;
 
     /* Send packet to target */
-    transport_send(&transmit_info_packet);
+    if( transport_send(&transmit_info_packet) > 0)
+    {
+        printf("[ HOST -> TARGET ] Reset Request sent! ...\n");
+        fileio_printf(&handle_log_file,"[ HOST -> TARGET ] Reset Request sent! ...\n");
+    }
+    else
+    {
+        printf("[ ERR ] [ HOST -> TARGET ] Reset Request sent erro! ...\n");
+        fileio_printf(&handle_log_file,"[ ERR ] [ HOST -> TARGET ] Reset Request sent erro! ...\n");
+    }
 }
 
 
@@ -148,11 +162,59 @@ void act_send_reset(fsm_event_t *e, fsm_t *fsm)
  * Pointer to the FSM instance.
  */
 void act_target_info(fsm_event_t *e, fsm_t *fsm)
-{
-    printf("TARGET -> INFO RECEIVED\n");
+{ 
+    comm_packet_t *pkt = (comm_packet_t *)e->data;
 
-    /* Trigger pipeline construction */
-    fsm_dispatch(fsm, fsm_event_create(EVT_START, NULL));
+    if(pkt != NULL)
+    {
+        if(pkt->length == 8)
+        {
+            uint32_t addr =
+                    (pkt->data[0] << 24) |
+                    (pkt->data[1] << 16) |
+                    (pkt->data[2] << 8)  |
+                    (pkt->data[3]);
+
+            uint16_t sector =
+                            (pkt->data[4] << 8) |
+                            pkt->data[5];
+
+            uint16_t segment =
+                            (pkt->data[6] << 8) |
+                            pkt->data[7];
+
+            printf("[ TARGET -> HOST ] Target Info received! ...\n");
+            fileio_printf(&handle_log_file,"[ TARGET -> HOST ] Target Info received! ...\n");
+
+            printf("[ TARGET ] Flash start Address:  0x%x\n", addr);
+            printf("[ TARGET ] Flash Sector Size:    0x%d\n", sector);
+            printf("[ TARGET ] Comm segment Size:  0x%x\n", segment);
+
+            fileio_printf(&handle_log_file,"[ TARGET ] Flash start Address:  0x%x\n", addr);
+            fileio_printf(&handle_log_file,"[ TARGET ] Flash Sector Size:    0x%d\n", sector);
+            fileio_printf(&handle_log_file,"[ TARGET ] Comm segment Size:  0x%x\n", segment);
+
+
+            /* Trigger pipeline construction */
+            fsm_dispatch(fsm, fsm_event_create(EVT_START, NULL));
+        }
+        else
+        {
+            printf("[ TARGET -> HOST ] Target Info packet length mismatch! ...\n");
+            fileio_printf(&handle_log_file,"[ TARGET -> HOST ] Target Info packet length mismatch! ...\n");
+        }
+
+        /** Free the event packet data */
+        free(pkt);
+    }
+    else
+    {
+        printf("[ TARGET -> HOST ] Target Info packet corrupted! ...\n");
+        fileio_printf(&handle_log_file,"[ TARGET -> HOST ] Target Info packet corrupted! ...\n");
+    }
+    
+
+
 }
 
 

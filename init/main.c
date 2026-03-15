@@ -126,6 +126,7 @@ int main(int argc, char *argv[])
     {
         /** Transport Layer Driver Initialization  */
         status = transport_init(&cmds);
+        transport_flush();
 
         if(status != 0)
         {
@@ -234,7 +235,7 @@ int main(int argc, char *argv[])
         fileio_close(&handle_log_file);
     }
 
-    printf("Exit Done! ...\n");
+    printf("Exit Done!\n");
 
     return EXIT_SUCCESS;
 }
