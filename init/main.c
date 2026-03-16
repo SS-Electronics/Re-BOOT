@@ -101,6 +101,19 @@ void handle_sigint(int sig)
  */
 int main(int argc, char *argv[])
 {
+    /** Bannar print */
+    printf("\n");
+    printf("  ╔════════════════════════════════════════╗\n");
+    printf("  ║           Re-BOOT Application          ║\n");
+    printf("  ║                                        ║\n");
+    printf("  ║   Platform   : ARM                     ║\n");
+    printf("  ║   Support    : Intel HEX               ║\n");
+    printf("  ║   Version    : v1.0.0                  ║\n");
+    printf("  ║   Developer  : SS-Electronis           ║\n");
+    printf("  ║   License    : GPL-3.0                 ║\n");
+    printf("  ║                                        ║\n");
+    printf("  ╚════════════════════════════════════════╝\n\n");
+
     /** Add signal interrupt from OS  */
     signal(SIGINT, handle_sigint);
 

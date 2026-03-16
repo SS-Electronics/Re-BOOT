@@ -94,7 +94,6 @@ docs/generated/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
-Makefile
 
 ############################################################
 # Doxygen temporary files
