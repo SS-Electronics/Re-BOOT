@@ -217,101 +217,88 @@ int read_hex_file(char * const filename,
     uint32_t    address, base_address = 0;
     uint32_t    type;
     uint32_t    byte_counter = 0;
-    uint8_t     first_seg_add_flag = 1;
+    uint8_t     first_data_record_flag = 1;   /* ← renamed: tracks first DATA record */
 
-   uint32_t max_records = buffer->size / sizeof(hex_record_t);
+    uint32_t max_records = buffer->size / sizeof(hex_record_t);
 
-    /** buffer->data -> allocated memory block
-        Treat that block as hex_record_t arr[]
-    */
     hex_record_t *record_arr = (hex_record_t *)buffer->data;
 
-    /** Open the file  */
     hex_file_ptr = fopen(filename, "r");
-
-    if(hex_file_ptr == NULL)
-    {
-         
+    if (hex_file_ptr == NULL)
         return EAGAIN;
-    }
 
-    while(fgets(line, sizeof(line), hex_file_ptr))
+    while (fgets(line, sizeof(line), hex_file_ptr))
     {
-        if(line[0] != ':')
-        {
-            continue; /** Not a valid hex record line */
-        }
+        if (line[0] != ':')
+            continue;
 
-        
-        /** : ll aaaa tt [dd...] cc*/
         length  = hex_to_int(line + 1, 2);
         address = hex_to_int(line + 3, 4);
         type    = hex_to_int(line + 7, 2);
 
-        /** Fill record structure */
-        record_arr[line_count].length = length;
-        record_arr[line_count].type   = type;
-        record_arr[line_count].checksum =
-            hex_to_int(line + 9 + (length * 2), 2);
+        record_arr[line_count].length   = length;
+        record_arr[line_count].type     = type;
+        record_arr[line_count].checksum = hex_to_int(line + 9 + (length * 2), 2);
 
-        /** Update extended address first */
-        if(type == 0x04)
+        /* Update the running segment base on every 0x04 record */
+        if (type == 0x04)
         {
             base_address = (hex_to_int(line + 9, 4) << 16);
-
-            /** Only Store the first address flag */
-            if(first_seg_add_flag == 1)
-            {
-                *hex_base_address = base_address;
-                first_seg_add_flag = 0;
-            }
         }
 
-        /** Absolute address */
+        /* Absolute address for this record */
         record_arr[line_count].address = base_address + address;
 
-        /** Track end address (only for data records) */
-        if(type == 0x00)
+        /* Process data records */
+        if (type == 0x00)
         {
-            /** Copy data bytes */
-            for(uint32_t i = 0; i < length; i++)
+            uint32_t abs_addr = record_arr[line_count].address;
+
+            /* Capture hex_base_address from the FIRST data record's
+               absolute address — this is the true lowest firmware byte. */
+            if (first_data_record_flag)
+            {
+                *hex_base_address      = (int32_t)abs_addr;
+                first_data_record_flag = 0;
+            }
+
+            /* Also track the minimum address in case records are not
+               in ascending order (unusual but valid in Intel HEX). */
+            if (abs_addr < (uint32_t)*hex_base_address)
+                *hex_base_address = (int32_t)abs_addr;
+
+            /* Copy data bytes */
+            for (uint32_t i = 0; i < length; i++)
             {
                 record_arr[line_count].data[i] =
                     hex_to_int(line + 9 + (i * 2), 2);
-                    byte_counter++;
+                byte_counter++;
             }
 
-            uint32_t end_addr =
-                record_arr[line_count].address + length;
-
-            if(end_addr > *hex_end_address)
-            {
+            /* Track the highest address seen */
+            uint32_t end_addr = abs_addr + length;
+            if (end_addr > *hex_end_address)
                 *hex_end_address = end_addr;
-            }
         }
 
-        if(args->verbose == VERBOSE_LEVEL_3)
+        if (args->verbose == VERBOSE_LEVEL_3)
         {
-             printf("**************************************\n");
-             printf("Line[%u]       %s", line_count, line);
-             printf("Record[%u]     %02X 0x%08X %u %02X\n", \
-                            line_count, \
-                            record_arr[line_count].type, \
-                            record_arr[line_count].address, \
-                            record_arr[line_count].length, \
-                            record_arr[line_count].checksum);
+            printf("**************************************\n");
+            printf("Line[%u]       %s", line_count, line);
+            printf("Record[%u]     %02X 0x%08X %u %02X\n",
+                   line_count,
+                   record_arr[line_count].type,
+                   record_arr[line_count].address,
+                   record_arr[line_count].length,
+                   record_arr[line_count].checksum);
         }
 
-        /** Next record */
         line_count++;
-
-        // /** Prevent buffer overflow */
-        // TODO: Need to implement based on buffer size
     }
 
-    printf("Total Bytes: %u [ 0x%x -> 0x%x] \n\r", byte_counter, *hex_base_address, *hex_end_address);
+    printf("Total Bytes: %u [ 0x%x -> 0x%x] \n\r",
+           byte_counter, *hex_base_address, *hex_end_address);
 
-    /** Close the file */
     fclose(hex_file_ptr);
     return 0;
 }

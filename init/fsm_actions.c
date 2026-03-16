@@ -264,15 +264,17 @@ void act_send_reset(fsm_event_t *e, fsm_t *fsm)
  */
 void act_target_info(fsm_event_t *e, fsm_t *fsm)
 {
-    comm_packet_t *pkt = (comm_packet_t *)e->data;
- 
+    comm_packet_t    *pkt = (comm_packet_t *)e->data;
+    bootloader_ctx_t *ctx = CTX(fsm);
+
     if (pkt == NULL)
     {
         printf("[ ERR ] Target info packet is NULL\n");
         fileio_printf(&handle_log_file, "[ERR ] RESP_TARGET_INFO is NULL\n");
+        fsm->fsm_running = FLAG_RESET;
         return;
     }
- 
+
     if (pkt->length != 8)
     {
         printf("[ ERR ] Target info length mismatch: got %u, expected 8\n",
@@ -281,37 +283,113 @@ void act_target_info(fsm_event_t *e, fsm_t *fsm)
                       "[ERR ] RESP_TARGET_INFO length=%u (expected 8)\n",
                       pkt->length);
         free(pkt);
+        fsm->fsm_running = FLAG_RESET;
         return;
     }
- 
+
+    /* Unpack target-reported flash start address */
     uint32_t flash_addr =
         ((uint32_t)pkt->data[0] << 24) |
         ((uint32_t)pkt->data[1] << 16) |
         ((uint32_t)pkt->data[2] <<  8) |
         ((uint32_t)pkt->data[3]);
- 
+
     uint16_t sector_size  = ((uint16_t)pkt->data[4] << 8) | pkt->data[5];
     uint16_t segment_size = ((uint16_t)pkt->data[6] << 8) | pkt->data[7];
- 
-    /* Console: one clean info block */
+
+    /* ================================================================
+       ADDRESS COMPATIBILITY CHECK
+       ================================================================
+       The target reports its APP_START_ADDRESS — the lowest flash
+       address the bootloader is permitted to write.
+
+       ctx->hex_base_address comes from the HEX file parser and is the
+       lowest absolute address present in any data record.
+
+       Two rules must both pass before any data is transmitted:
+
+         Rule 1 — Non-empty image:
+           hex_end_address > hex_base_address
+           Catches an empty HEX file or a parser failure that left
+           both addresses at zero.
+
+         Rule 2 — No bootloader overlap:
+           hex_base_address >= flash_addr (target APP_START_ADDRESS)
+           If the HEX image starts below APP_START_ADDRESS it contains
+           data intended for the bootloader's own flash region.
+           Flashing it would corrupt the bootloader.
+
+       On any failure: print a clear diagnostic, halt the FSM,
+       and return — no pipeline is built, no data is sent.
+    ================================================================ */
+
+    /* Print info first so the operator always sees what was received */
     printf("[ Re-BOOT ] Target connected\n");
     printf("            Flash start : 0x%08X\n", flash_addr);
     printf("            Sector size : %u bytes\n", sector_size);
-    printf("            Segment size: %u bytes\n\n", segment_size);
- 
-    /* Log: full detail */
+    printf("            Segment size: %u bytes\n", segment_size);
+    printf("            HEX range   : 0x%08X -> 0x%08X\n",
+           ctx->hex_base_address, ctx->hex_end_address);
+
     fileio_printf(&handle_log_file,
                   "[TARGET] flash=0x%08X  sector=%u B  segment=%u B\n",
                   flash_addr, sector_size, segment_size);
- 
-    bootloader_ctx_t *ctx = CTX(fsm);
+    fileio_printf(&handle_log_file,
+                  "[TARGET] HEX range 0x%08X -> 0x%08X\n",
+                  ctx->hex_base_address, ctx->hex_end_address);
+
+    /* Rule 1 — non-empty image */
+    if (ctx->hex_end_address <= ctx->hex_base_address)
+    {
+        printf("[ ERR ] HEX image is empty or has invalid address range.\n");
+        printf("        hex_base=0x%08X  hex_end=0x%08X\n",
+               ctx->hex_base_address, ctx->hex_end_address);
+        printf("        Aborting.\n\n");
+
+        fileio_printf(&handle_log_file,
+                      "[ERR ] Empty/invalid HEX range — abort\n");
+
+        free(pkt);
+        fsm->fsm_running = FLAG_RESET;
+        return;
+    }
+
+    /* Rule 2 — HEX image must not start below the app region */
+    if (ctx->hex_base_address < flash_addr)
+    {
+        printf("[ ERR ] HEX image address is incompatible with target.\n");
+        printf("        HEX base          : 0x%08X\n", ctx->hex_base_address);
+        printf("        Target app start  : 0x%08X\n", flash_addr);
+        printf("        Overlap           : 0x%08X bytes into bootloader\n",
+               flash_addr - ctx->hex_base_address);
+        printf("        Aborting to protect bootloader flash.\n\n");
+
+        fileio_printf(&handle_log_file,
+                      "[ERR ] Address mismatch HEX=0x%08X < target=0x%08X — abort\n",
+                      ctx->hex_base_address, flash_addr);
+
+        free(pkt);
+        fsm->fsm_running = FLAG_RESET;
+        return;
+    }
+
+    /* Both checks passed */
+    printf("            Addr check  : PASS  "
+           "(0x%08X >= 0x%08X)\n\n",
+           ctx->hex_base_address, flash_addr);
+
+    fileio_printf(&handle_log_file,
+                  "[TARGET] Addr check PASS: HEX=0x%08X >= target=0x%08X\n",
+                  ctx->hex_base_address, flash_addr);
+
+    /* Store parameters and proceed */
     ctx->sector_size   = sector_size;
     ctx->segment_size  = segment_size;
     ctx->retry_count   = 0;
     ctx->max_retries   = MAX_RETRY;
- 
+
     free(pkt);
- 
+
     fsm_dispatch(fsm, fsm_event_create(EVT_START, NULL));
 }
  
@@ -637,7 +715,7 @@ void act_next_sector(fsm_event_t *e, fsm_t *fsm)
     printf("\r  [ OK ]  Sector %2u  0x%08X  written and verified\n",
            ctx->current_sector, sector_base,"");
     fflush(stdout);
-    
+
     fileio_printf(&handle_log_file,
                   "[SECTOR ] sector=%u addr=0x%08X  WRITTEN OK  (%u/%u)\n",
                   ctx->current_sector,

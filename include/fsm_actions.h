@@ -153,6 +153,11 @@ typedef struct
      * Reserved for future use.
      */
     uint8_t thread_running;
+
+    /* HEX file address range from parser ---------------- */
+    uint32_t            hex_base_address;   /**< Lowest address in HEX file  */
+    uint32_t            hex_end_address;    /**< One-past-last address in HEX */
+
  
 } bootloader_ctx_t;
 
