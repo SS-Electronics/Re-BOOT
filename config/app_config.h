@@ -40,8 +40,9 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
  */
 #define SERIAL 1
 #define TCP 2
+#define CAN 3
 
-
+#define CAN_MAX_PAYLOAD 8
 /**
  * @brief Maximum character in a HEX file each line ':' to ':' length
  */

@@ -24,38 +24,70 @@ You should have received a copy of the GNU General Public License
 along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 */
 
+/* 
+File:        transport_layer.c
+Author:      Subhajit Roy  
+             subhajitroy005@gmail.com 
+
+Module:      Comm  
+Info:        Switching communication between any communication
+             protocol, allowing a generic structure            
+Dependency:  None
+
+This file is part of Re-BOOT Project.
+
+Re-BOOT is free software: you can redistribute it and/or 
+modify it under the terms of the GNU General Public License 
+as published by the Free Software Foundation, either version 
+3 of the License, or (at your option) any later version.
+
+Re-BOOT is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of 
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License 
+along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
+*/
+
 /**
  * @file transport_layer.c
- * @brief Generic transport layer — driver-independent packet framing.
+ * @brief Driver-independent packet framing for Serial, TCP, and CAN-over-Serial.
  *
- * This module sits between the FSM/protocol layer and the physical
- * communication drivers (serial or TCP).  It handles:
+ * @par Supported frame formats
  *
- *  - Frame construction and transmission via @c transport_send()
- *  - Byte-stream parsing and frame reconstruction via @c transport_receive()
- *  - CRC16-CCITT integrity checking on both TX and RX paths
- *
- * @par Wire frame format
+ * @b Serial / TCP — byte-stream framing with CRC16 integrity check:
  * @code
- *  ┌────┬─────┬───────┬───────┬──────────────┬───────┬───────┐
+ *  ┌─────┬─────┬───────┬───────┬──────────────┬───────┬───────┐
  *  │ ':' │ CMD │ LEN_H │ LEN_L │ DATA[0..N-1] │ CRC_H │ CRC_L │
- *  └────┴─────┴───────┴───────┴──────────────┴───────┴───────┘
- *    1B    1B     1B      1B        N bytes       1B      1B
+ *  └─────┴─────┴───────┴───────┴──────────────┴───────┴───────┘
+ *    1 B   1 B    1 B     1 B       N bytes      1 B     1 B
+ * @endcode
+ * CRC16-CCITT computed over CMD + LEN_H + LEN_L + DATA.
+ *
+ * @b CAN-over-Serial — compact framing over the USB-CAN adapter virtual port:
+ * @code
+ *  ┌─────┬─────┬─────┬──────────────────┐
+ *  │ ':' │ CMD │ LEN │ DATA[0..LEN-1]   │
+ *  └─────┴─────┴─────┴──────────────────┘
+ *    1 B   1 B   1 B      0–8 bytes
+ *  Total: 3 + LEN bytes (max 11 bytes)
  * @endcode
  *
- * The CRC16-CCITT is computed over: CMD + LEN_H + LEN_L + DATA.
- * The start delimiter @c ':' is NOT included in the CRC.
+ * CAN frame field mapping from @ref comm_packet_t:
+ *  - @c pkt->command → CMD   (= CAN ID, low 8 bits used as command code)
+ *  - @c pkt->length  → LEN   (single byte, replaces LEN_H:LEN_L, max 8)
+ *  - @c pkt->data[]  → DATA  (raw payload, no CRC appended)
  *
- * @par Parser design — why module-level state matters
- * @c transport_receive() is called repeatedly from a dedicated RX
- * thread.  Its internal parser must survive across calls — each call
- * may process only a few bytes before returning, so the parser position
- * must be remembered.  The variables are therefore declared at
- * @b module level (file scope) rather than as local statics or locals.
+ * The @c ':' delimiter is kept for easy re-synchronisation on the wire.
+ * No CRC bytes are appended — the CAN hardware provides a 15-bit CRC
+ * that the USB-CAN adapter validates before forwarding the frame.
  *
- * Using module-level (non-stack) state also makes it straightforward
- * to call @c parser_reset() from any error path without worrying about
- * C's "local static initialised once" semantics.
+ * @par Why no new CAN driver
+ * The USB-CAN adapter exposes itself as a virtual serial port (ttyUSBx).
+ * The existing @c drv_serial_tx() / @c drv_serial_rx() calls are reused —
+ * only the byte packing inside @c transport_send() and @c transport_receive()
+ * differs from the Serial/TCP path.
  */
 
 #include "transport_layer.h"
@@ -63,67 +95,77 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <string.h>
 
+
 /* ====================================================================
-   Driver handles and active driver selector
+   Module-level driver handles
    ==================================================================== */
 
-/** @brief Serial driver handle. Initialised by @c transport_init(). */
+/**
+ * @brief Serial driver handle.
+ * Used for @c SERIAL and @c CAN modes (CAN adapter = virtual serial port).
+ */
 static drv_serial_t handle_serial_driver;
 
-/** @brief TCP driver handle. Initialised by @c transport_init(). */
+/** @brief TCP driver handle.  Used for @c TCP mode only. */
 static drv_tcp_t    handle_tcp_driver;
 
 /**
- * @brief Active driver selector.
+ * @brief Active driver type selector.
  *
- * Set to @c SERIAL or @c TCP by @c transport_init() and consulted
- * by @c transport_send(), @c transport_receive(), and
- * @c transport_flush().
+ * Set to @c SERIAL, @c TCP, or @c CAN by @c transport_init().
+ * 0 = not initialised.
  */
 static uint32_t driver_type = 0;
 
 
 /* ====================================================================
-   RX parser state  (module-level — persists across calls)
+   Serial / TCP RX parser state  (module-level — persists across calls)
    ==================================================================== */
 
 /**
- * @brief Current parser state (0–6).
+ * @brief Current Serial/TCP parser state (0 = idle, waiting for ':').
  *
- * Encodes which field the parser is currently waiting for:
- *  0 = waiting for start delimiter ':'
- *  1 = reading CMD byte
- *  2 = reading LEN_H byte
- *  3 = reading LEN_L byte
- *  4 = reading DATA bytes
- *  5 = reading CRC_H byte
- *  6 = reading CRC_L byte
+ * State encoding:
+ *  0 — scanning for @c ':' start-of-frame delimiter
+ *  1 — reading CMD byte
+ *  2 — reading LEN_H byte
+ *  3 — reading LEN_L byte
+ *  4 — reading DATA bytes
+ *  5 — reading CRC_H byte
+ *  6 — reading CRC_L byte and validating
  */
 static uint8_t  rx_state  = 0;
 
-/**
- * @brief Data byte index within the current packet's payload.
- *
- * Counts bytes received into @c pkt->data[] during state 4.
- * Reset to 0 at the start of each new frame.
- */
+/** @brief Data byte index within the current Serial/TCP frame payload. */
 static uint16_t rx_index  = 0;
 
-/**
- * @brief Payload length decoded from LEN_H:LEN_L.
- *
- * Set in state 3 and used in state 4 to know when the data phase
- * is complete.  Also used in the CRC verification buffer in state 6.
- */
+/** @brief Payload length decoded from LEN_H:LEN_L (Serial/TCP). */
 static uint16_t rx_length = 0;
 
-/**
- * @brief Received CRC16 value accumulated across states 5 and 6.
- *
- * State 5 loads the high byte; state 6 loads the low byte and then
- * performs the validation.
- */
+/** @brief Received CRC16 accumulated across states 5 and 6 (Serial/TCP). */
 static uint16_t rx_crc    = 0;
+
+
+/* ====================================================================
+   CAN RX parser state  (module-level — persists across calls)
+   ==================================================================== */
+
+/**
+ * @brief Current CAN parser state (0 = idle, waiting for ':').
+ *
+ * State encoding:
+ *  0 — scanning for @c ':' start-of-frame delimiter
+ *  1 — reading CMD byte         → @c pkt->command
+ *  2 — reading LEN byte         → @c pkt->length  (0–8, validated)
+ *  3 — reading LEN data bytes   → @c pkt->data[]
+ */
+static uint8_t can_rx_state = 0;
+
+/** @brief LEN decoded in CAN state 2 — number of data bytes to read. */
+static uint8_t can_rx_len   = 0;
+
+/** @brief Data byte index within the current CAN frame payload. */
+static uint8_t can_rx_index = 0;
 
 
 /* ====================================================================
@@ -131,13 +173,10 @@ static uint16_t rx_crc    = 0;
    ==================================================================== */
 
 /**
- * @brief Reset the RX parser to its initial idle state.
+ * @brief Reset the Serial/TCP parser to its idle state.
  *
- * Called on every successful packet return, on every framing error,
- * on every CRC failure, and when the payload length exceeds the
- * buffer.  Resetting all four parser variables together ensures the
- * parser always starts a new frame from a clean slate regardless of
- * how the previous one ended.
+ * Called on successful packet return, length-overflow error, and CRC
+ * failure so the next call always scans cleanly for a new @c ':'.
  */
 static void parser_reset(void)
 {
@@ -148,18 +187,28 @@ static void parser_reset(void)
 }
 
 /**
+ * @brief Reset the CAN parser to its idle state.
+ *
+ * Called on successful CAN frame return and on LEN-overflow error so
+ * the next call scans cleanly for a new @c ':' delimiter.
+ */
+static void can_parser_reset(void)
+{
+    can_rx_state = 0;
+    can_rx_len   = 0;
+    can_rx_index = 0;
+}
+
+/**
  * @brief Compute CRC16-CCITT (polynomial 0x1021, init 0xFFFF).
  *
- * This is the same algorithm used by the target-side bootloader so
- * that both ends of the link agree on the checksum for every frame.
+ * Used only by the Serial and TCP send/receive paths.
+ * The CAN path does not call this — integrity is provided by hardware.
  *
- * The CRC is computed MSB-first (non-reflected), matching the
- * original CCITT specification.
+ * @param data  Input byte buffer.
+ * @param len   Number of bytes to process.
  *
- * @param data  Pointer to the input byte buffer.
- * @param len   Number of bytes to include in the calculation.
- *
- * @return Computed CRC16-CCITT value.
+ * @return CRC16-CCITT value.
  */
 static uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
 {
@@ -183,29 +232,30 @@ static uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
 
 
 /* ====================================================================
-   Public API
+   transport_init
    ==================================================================== */
 
 /**
  * @brief Initialise the transport layer and open the active driver.
  *
- * Reads the @c interface field from @p cmds and selects the
- * appropriate driver:
- *  - @c "serial" — opens the serial port at @c cmds->ip with baud
- *                  rate 115200.
- *  - @c "tcp"    — connects to the TCP server at @c cmds->ip :
- *                  @c cmds->port.
+ * Interface selection via @c cmds->interface string:
+ *  - @c "serial" — opens @c cmds->ip as a serial port at 115200 baud.
+ *  - @c "tcp"    — connects TCP to @c cmds->ip : @c cmds->port.
+ *  - @c "can"    — opens @c cmds->ip as a serial port at 115200 baud.
+ *                  Uses the same @c drv_serial driver as "serial" because
+ *                  the USB-CAN adapter appears as a virtual COM port.
+ *                  Only the frame packing differs.
  *
- * @param cmds  Pointer to parsed command-line arguments.
+ * @param cmds  Parsed command-line arguments.
  *
- * @return 0 on success, negative on failure.
+ * @return 0 on success, -1 on failure.
  */
 int transport_init(cmd_args_t *cmds)
 {
     if (cmds->interface == NULL)
     {
         printf("[ ERR ] Communication interface not provided!\n");
-        printf("Use: '-c serial' or '-c tcp'\n");
+        printf("Use: '-c serial', '-c tcp', or '-c can'\n");
         return -1;
     }
 
@@ -233,23 +283,45 @@ int transport_init(cmd_args_t *cmds)
         driver_type = TCP;
         return drv_tcp_open(&handle_tcp_driver, cmds->ip, cmds->port);
     }
+    else if (strcmp(cmds->interface, "can") == 0)
+    {
+        if (cmds->ip == NULL)
+        {
+            printf("[ ERR ] CAN adapter port not specified.\n");
+            printf("Use: '-i ttyUSB0'  (the USB-CAN adapter virtual port)\n");
+            return -1;
+        }
+
+        /* CAN reuses the serial driver — adapter appears as a virtual COM port.
+           Frame packing/parsing is different from the serial path. */
+        driver_type = CAN;
+        return drv_serial_open(&handle_serial_driver, cmds->ip, 115200);
+    }
     else
     {
         printf("[ ERR ] Unknown interface '%s'.\n", cmds->interface);
-        printf("Use: 'serial' or 'tcp'\n");
+        printf("Use: '-c serial', '-c tcp', or '-c can'\n");
         return -1;
     }
 }
 
+
+/* ====================================================================
+   transport_close
+   ==================================================================== */
+
 /**
  * @brief Close the active transport driver and release resources.
  *
- * @param cmds  Pointer to command-line arguments (used to identify
- *              which driver to close).
+ * Both @c SERIAL and @c CAN modes use @c drv_serial, so both call
+ * @c drv_serial_close().
+ *
+ * @param cmds  Command-line arguments (driver type identified via
+ *              module-level @c driver_type, @p cmds is unused here).
  */
 void transport_close(cmd_args_t *cmds)
 {
-    if (driver_type == SERIAL)
+    if (driver_type == SERIAL || driver_type == CAN)
         drv_serial_close(&handle_serial_driver);
     else if (driver_type == TCP)
         drv_tcp_close(&handle_tcp_driver);
@@ -257,50 +329,99 @@ void transport_close(cmd_args_t *cmds)
     driver_type = 0;
 }
 
+
+/* ====================================================================
+   transport_send
+   ==================================================================== */
+
 /**
- * @brief Encode and transmit one packet over the active transport.
+ * @brief Encode and transmit one packet through the active transport.
  *
- * Builds the complete wire frame in a local buffer, appends the
- * CRC16-CCITT over CMD+LEN+DATA, and hands it to the driver.
- *
- * @par Frame layout
+ * @par Serial / TCP path
  * @code
- *  ':' | CMD | LEN_H | LEN_L | DATA[0..N-1] | CRC_H | CRC_L
+ *  ':' | CMD(1B) | LEN_H(1B) | LEN_L(1B) | DATA(NB) | CRC_H(1B) | CRC_L(1B)
  * @endcode
+ * CRC16-CCITT appended over CMD + LEN_H + LEN_L + DATA.
  *
- * @param pkt  Pointer to the packet to transmit.
+ * @par CAN path
+ * @code
+ *  ':' | CMD(1B) | LEN(1B) | DATA[0..LEN-1]
+ * @endcode
+ *  - @b CMD : @c pkt->command  (maps to the 11-bit CAN ID, low 8 bits)
+ *  - @b LEN : @c pkt->length   (single byte, 0–8, no LEN_H byte)
+ *  - @b DATA: @c pkt->data[]   (raw payload, no CRC bytes appended)
  *
- * @return Number of bytes written to the driver (> 0) on success,
- *         or -1 if @p pkt is NULL or the payload is too large.
+ * @param pkt  Packet to transmit.
+ *
+ * @return Bytes written (> 0) on success, -1 on error.
  */
 int transport_send(comm_packet_t *pkt)
 {
-    if (!pkt || pkt->length > 2048u - 6u)
+    if (!pkt)
+        return -1;
+
+    /* ----------------------------------------------------------------
+       CAN-over-Serial framing
+       ':' | CMD(1B) | LEN(1B) | DATA[0..LEN-1]
+       Total: 3 + LEN bytes  (max 11 bytes for LEN=8)
+    ---------------------------------------------------------------- */
+    if (driver_type == CAN)
+    {
+        if (pkt->length > CAN_MAX_PAYLOAD)
+        {
+            printf("[ ERR ] CAN payload %u > CAN_MAX_PAYLOAD (%u)"
+                   " — truncating\n", pkt->length, CAN_MAX_PAYLOAD);
+        }
+
+        uint8_t len = (pkt->length <= CAN_MAX_PAYLOAD)
+                    ? (uint8_t)pkt->length
+                    : (uint8_t)CAN_MAX_PAYLOAD;
+
+        /* Build the frame in a local buffer */
+        uint8_t frame[3u + CAN_MAX_PAYLOAD];
+        uint8_t pos = 0u;
+
+        frame[pos++] = ':';          /* start delimiter — same as Serial  */
+        frame[pos++] = pkt->command; /* CMD = CAN ID (low 8 bits)         */
+        frame[pos++] = len;          /* LEN = single byte (0–8)           */
+
+        if (len > 0u)
+        {
+            memcpy(&frame[pos], pkt->data, len);
+            pos += len;
+        }
+
+        /* No CRC — CAN hardware handles frame integrity */
+        return drv_serial_tx(&handle_serial_driver, frame, pos);
+    }
+
+    /* ----------------------------------------------------------------
+       Serial / TCP framing (byte-stream with CRC16)
+       ':' | CMD | LEN_H | LEN_L | DATA | CRC_H | CRC_L
+    ---------------------------------------------------------------- */
+    if (pkt->length > 2048u - 6u)
         return -1;
 
     uint8_t  frame[2048];
     uint16_t pos = 0;
 
-    /* ---- Build frame ------------------------------------------------ */
+    frame[pos++] = ':';
+    frame[pos++] = pkt->command;
+    frame[pos++] = (pkt->length >> 8) & 0xFF;   /* LEN_H */
+    frame[pos++] =  pkt->length        & 0xFF;   /* LEN_L */
 
-    frame[pos++] = ':';                          /* start delimiter      */
-    frame[pos++] = pkt->command;                 /* command byte         */
-    frame[pos++] = (pkt->length >> 8) & 0xFF;   /* payload length MSB   */
-    frame[pos++] =  pkt->length        & 0xFF;   /* payload length LSB   */
-
-    if (pkt->length > 0)
+    if (pkt->length > 0u)
     {
         memcpy(&frame[pos], pkt->data, pkt->length);
         pos += pkt->length;
     }
 
-    /* CRC covers CMD + LEN_H + LEN_L + DATA (i.e. frame[1] onward) */
+    /* CRC16-CCITT over CMD + LEN_H + LEN_L + DATA */
     uint16_t crc = crc16_ccitt(&frame[1], (uint16_t)(pkt->length + 3u));
 
-    frame[pos++] = (crc >> 8) & 0xFF;           /* CRC MSB              */
-    frame[pos++] =  crc        & 0xFF;           /* CRC LSB              */
+    frame[pos++] = (crc >> 8) & 0xFF;
+    frame[pos++] =  crc        & 0xFF;
 
-    /* ---- Send via active driver ------------------------------------- */
     if (driver_type == SERIAL)
         return drv_serial_tx(&handle_serial_driver, frame, pos);
 
@@ -310,38 +431,39 @@ int transport_send(comm_packet_t *pkt)
     return -1;
 }
 
+
+/* ====================================================================
+   transport_receive
+   ==================================================================== */
+
 /**
- * @brief Block until one valid framed packet is received.
+ * @brief Receive one protocol packet from the active transport.
  *
- * Reads the byte stream one byte at a time and runs it through a
- * seven-state parser.  The function returns only when a complete,
- * CRC-verified packet has been assembled or the thread is asked
- * to stop.
+ * Spins until a complete valid packet arrives or the thread stop flag
+ * is cleared.
  *
- * @par Parser states
- *  - State 0 : Scan for @c ':' start delimiter.
- *  - State 1 : Read CMD byte.
- *  - State 2 : Read LEN_H byte.
- *  - State 3 : Read LEN_L byte; validate length; skip to state 5
- *              when length == 0 (no data phase needed).
- *  - State 4 : Read @c length data bytes into @c pkt->data[].
- *  - State 5 : Read CRC_H byte.
- *  - State 6 : Read CRC_L byte; compute and validate CRC; return.
+ * @par Serial / TCP parser  (7 states)
+ * Reconstructs packets from the byte stream and validates CRC16.
+ * State is preserved in module-level variables across calls.
  *
- * @par Error handling
- * On @b any error (length overflow, CRC mismatch) the parser is
- * fully reset via @c parser_reset() before returning the error code.
- * This ensures the next call always starts scanning cleanly for a
- * new @c ':' delimiter regardless of what the previous call did.
+ * @par CAN parser  (4 states)
+ * Parses the compact CAN frame:
+ * @code
+ *  State 0 : scan for ':' start delimiter  (re-sync on noise/misalign)
+ *  State 1 : read CMD byte  → pkt->command
+ *  State 2 : read LEN byte  → pkt->length  (validated ≤ CAN_MAX_PAYLOAD)
+ *  State 3 : read LEN data bytes → pkt->data[]
+ * @endcode
+ * No CRC check — the USB-CAN adapter only forwards frames that already
+ * passed the CAN hardware CRC before being sent over USB.
  *
- * @param pkt                 Output: populated packet on success.
- * @param thread_running_flag Pointer to the thread control flag.
- *                            The loop exits when this becomes 0.
+ * @param pkt                  Output: populated on success.
+ * @param thread_running_flag  Loop exits when this becomes 0.
  *
  * @return Payload byte count (>= 0) on success.
- * @retval -1  Null pointer or thread stopped.
- * @retval -3  Payload length exceeds @c COMM_MAX_DATA.
- * @retval -5  CRC16 mismatch — frame discarded.
+ * @retval -1  NULL pointer or thread stopped.
+ * @retval -3  Payload exceeds buffer (Serial/TCP) or CAN_MAX_PAYLOAD (CAN).
+ * @retval -5  CRC16 mismatch (Serial/TCP only).
  */
 int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
 {
@@ -352,34 +474,111 @@ int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
 
     while (*thread_running_flag)
     {
-        /* ---- Read one byte from the active driver ------------------- */
+        /* Read one byte from the active driver */
         int n = -1;
 
-        if (driver_type == SERIAL)
+        if (driver_type == SERIAL || driver_type == CAN)
             n = drv_serial_rx(&handle_serial_driver, &byte, 1);
         else if (driver_type == TCP)
             n = drv_tcp_rx(&handle_tcp_driver, &byte, 1);
 
-        /* No byte available yet — yield and retry */
         if (n <= 0)
             continue;
 
-        /* ---- Feed byte into the parser state machine ---------------- */
+        /* ============================================================
+           CAN-over-Serial parser
+           Frame: ':' | CMD(1B) | LEN(1B) | DATA[0..LEN-1]
+           ============================================================ */
+        if (driver_type == CAN)
+        {
+            switch (can_rx_state)
+            {
+                /* --------------------------------------------------------
+                   State 0: scan for ':' start-of-frame delimiter.
+                   Discarding non-':' bytes provides the same self-healing
+                   re-sync as the Serial/TCP parser.
+                -------------------------------------------------------- */
+                case 0:
+                    if (byte == (uint8_t)':')
+                        can_rx_state = 1;
+                    break;
+
+                /* --------------------------------------------------------
+                   State 1: CMD byte.
+                   Carries the CAN command code (= CAN ID low 8 bits).
+                -------------------------------------------------------- */
+                case 1:
+                    pkt->command = byte;
+                    can_rx_state = 2;
+                    break;
+
+                /* --------------------------------------------------------
+                   State 2: LEN byte — single byte replaces LEN_H:LEN_L.
+                   Validate against CAN_MAX_PAYLOAD (8).
+                -------------------------------------------------------- */
+                case 2:
+                    if (byte > CAN_MAX_PAYLOAD)
+                    {
+                        printf("[ RX CAN ] LEN %u > CAN_MAX_PAYLOAD (%u)"
+                               " — discarding frame\n",
+                               byte, CAN_MAX_PAYLOAD);
+                        can_parser_reset();
+                        return -3;
+                    }
+
+                    can_rx_len   = byte;
+                    pkt->length  = byte;
+                    can_rx_index = 0u;
+
+                    /* Zero-length CAN frame — valid, no data phase needed */
+                    if (can_rx_len == 0u)
+                    {
+                        can_parser_reset();
+                        return 0;
+                    }
+
+                    can_rx_state = 3;
+                    break;
+
+                /* --------------------------------------------------------
+                   State 3: read exactly LEN data bytes.
+                   Return as soon as the last byte is stored.
+                -------------------------------------------------------- */
+                case 3:
+                    pkt->data[can_rx_index++] = byte;
+
+                    if (can_rx_index == can_rx_len)
+                    {
+                        uint8_t pkt_len = can_rx_len;
+                        can_parser_reset();
+                        return (int)pkt_len;
+                    }
+                    break;
+
+                default:
+                    can_parser_reset();
+                    break;
+            }
+
+            continue;   /* back to top of while loop */
+        }
+
+        /* ============================================================
+           Serial / TCP parser
+           Frame: ':' | CMD | LEN_H | LEN_L | DATA | CRC_H | CRC_L
+           ============================================================ */
         switch (rx_state)
         {
             /* ----------------------------------------------------------
-               State 0: hunt for the ':' start-of-frame delimiter.
-               Any byte that is not ':' is silently discarded, which
-               automatically re-synchronises the parser after noise or
-               a framing error on the previous packet.
+               State 0: scan for ':' start-of-frame delimiter.
             ---------------------------------------------------------- */
             case 0:
-                if (byte == ':')
+                if (byte == (uint8_t)':')
                     rx_state = 1;
                 break;
 
             /* ----------------------------------------------------------
-               State 1: capture the command byte.
+               State 1: CMD byte.
             ---------------------------------------------------------- */
             case 1:
                 pkt->command = byte;
@@ -387,7 +586,7 @@ int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
                 break;
 
             /* ----------------------------------------------------------
-               State 2: capture the high byte of the payload length.
+               State 2: LEN_H — high byte of payload length.
             ---------------------------------------------------------- */
             case 2:
                 rx_length = (uint16_t)((uint16_t)byte << 8);
@@ -395,36 +594,28 @@ int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
                 break;
 
             /* ----------------------------------------------------------
-               State 3: capture the low byte of the payload length.
-               Validate that it fits in the packet buffer, then either
-               enter the data phase (state 4) or skip straight to the
-               CRC phase (state 5) for zero-length packets such as
-               RESP_SEG_ACK.
+               State 3: LEN_L — low byte of payload length.
+               Skip data phase for zero-length packets.
             ---------------------------------------------------------- */
             case 3:
                 rx_length |= (uint16_t)byte;
 
                 if (rx_length > (uint16_t)sizeof(pkt->data))
                 {
-                    /* Payload too large — cannot fit in packet buffer */
-                    printf("[ RX ] Frame error: payload length %u exceeds "
-                           "buffer %u — discarding\n",
+                    printf("[ RX ] Frame error: length %u exceeds buffer"
+                           " %u — discarding\n",
                            rx_length, (uint16_t)sizeof(pkt->data));
-
                     parser_reset();
                     return -3;
                 }
 
                 pkt->length = rx_length;
                 rx_index    = 0;
-
-                /* Jump to CRC phase if there are no data bytes */
-                rx_state = (rx_length == 0u) ? 5u : 4u;
+                rx_state    = (rx_length == 0u) ? 5u : 4u;
                 break;
 
             /* ----------------------------------------------------------
-               State 4: accumulate payload bytes until rx_length bytes
-               have been stored, then advance to the CRC phase.
+               State 4: accumulate data bytes.
             ---------------------------------------------------------- */
             case 4:
                 pkt->data[rx_index++] = byte;
@@ -434,7 +625,7 @@ int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
                 break;
 
             /* ----------------------------------------------------------
-               State 5: capture CRC high byte.
+               State 5: CRC_H byte.
             ---------------------------------------------------------- */
             case 5:
                 rx_crc   = (uint16_t)((uint16_t)byte << 8);
@@ -442,28 +633,17 @@ int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
                 break;
 
             /* ----------------------------------------------------------
-               State 6: capture CRC low byte, then validate the frame.
-
-               The CRC is computed over the same byte range that
-               transport_send() covered: CMD + LEN_H + LEN_L + DATA.
-               Building a temporary buffer lets us reuse crc16_ccitt()
-               without modifying the received packet struct.
+               State 6: CRC_L byte — validate and return.
+               Save rx_crc to a local BEFORE parser_reset() zeroes it.
             ---------------------------------------------------------- */
             case 6:
             {
                 rx_crc |= (uint16_t)byte;
 
-                /* Save the received CRC into a local variable BEFORE calling
-                parser_reset(). parser_reset() zeros rx_crc, so if we compare
-                after the reset we are always comparing against 0x0000 — which
-                is why every packet was failing CRC validation. Saving to a
-                local first means the reset can happen at the clean boundary
-                point without destroying the value we still need. */
-                uint16_t received_crc = rx_crc;
+                uint16_t received_crc = rx_crc;   /* save before reset */
 
-                /* Build the CRC input buffer: CMD, LEN_H, LEN_L, DATA */
                 uint8_t  crc_buf[COMM_MAX_DATA + 3u];
-                uint16_t crc_pos = 0;
+                uint16_t crc_pos = 0u;
 
                 crc_buf[crc_pos++] = pkt->command;
                 crc_buf[crc_pos++] = (pkt->length >> 8) & 0xFF;
@@ -478,17 +658,13 @@ int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
                 uint16_t crc_calc = crc16_ccitt(crc_buf, crc_pos);
                 uint16_t pkt_len  = pkt->length;
 
-                /* Reset parser state now — safe because received_crc holds
-                the value we need and pkt_len holds the length we need.
-                From this line onward all module-level parser variables
-                are zero regardless of which return path we take. */
-                parser_reset();
+                parser_reset();   /* all needed values are in locals now */
 
                 if (crc_calc != received_crc)
                 {
                     printf("[ RX ] CRC mismatch: calc=0x%04X  rx=0x%04X"
-                        "  cmd=0x%02X — discarding\n",
-                        crc_calc, received_crc, pkt->command);
+                           "  cmd=0x%02X — discarding\n",
+                           crc_calc, received_crc, pkt->command);
                     return -5;
                 }
 
@@ -496,25 +672,25 @@ int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
             }
 
             default:
-                /* Should never happen — reset to be safe */
                 parser_reset();
                 break;
         }
     }
 
-    /* Thread stop requested */
     return -1;
 }
 
+
+/* ====================================================================
+   transport_flush
+   ==================================================================== */
+
 /**
- * @brief Flush all pending bytes from the serial receive FIFO.
+ * @brief Flush stale bytes from the receive buffer.
  *
- * Reads and discards bytes until no more are available.  Called once
- * during startup to clear any garbage that arrived before the
- * bootloader was ready to receive.
- *
- * Also resets the RX parser state so @c transport_receive() starts
- * completely clean after the flush.
+ * Drains the hardware FIFO until the driver returns 0.  Resets both
+ * the Serial/TCP parser and the CAN parser unconditionally so the next
+ * call to @c transport_receive() always starts from a clean state.
  *
  * @return 0 always.
  */
@@ -522,14 +698,23 @@ int transport_flush(void)
 {
     uint8_t tmp;
 
-    /* Drain the hardware FIFO */
-    while (drv_serial_rx(&handle_serial_driver, &tmp, 1) > 0)
+    if (driver_type == SERIAL || driver_type == CAN)
     {
-        /* discard byte */
+        while (drv_serial_rx(&handle_serial_driver, &tmp, 1) > 0)
+        {
+            /* discard stale bytes */
+        }
+    }
+    else if (driver_type == TCP)
+    {
+        while (drv_tcp_rx(&handle_tcp_driver, &tmp, 1) > 0)
+        {
+            /* discard stale bytes */
+        }
     }
 
-    /* Reset the software parser so receive starts from a clean state */
     parser_reset();
+    can_parser_reset();
 
     return 0;
 }
