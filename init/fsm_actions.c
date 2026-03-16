@@ -54,28 +54,108 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
  * Use the @c CTX(fsm) macro defined in @c fsm_actions.h for clean access.
  */
  
+/* ====================================================================
+   Module constants
+   ==================================================================== */
+ 
+/**
+ * @brief Width of the ASCII progress bar in characters.
+ *
+ * Adjust to taste.  20 fits comfortably on an 80-column terminal
+ * alongside the percentage and sector information.
+ */
+#define PROGRESS_BAR_WIDTH  20u
 
 /* ------------------------------------------------------------------ */
 /** @brief Static TX packet reused for every outgoing transmission.   */
 /* ------------------------------------------------------------------ */
 static comm_packet_t tx_pkt;
 
+/**
+ * @brief Running count of segments successfully sent this session.
+ *
+ * Incremented by @ref act_send_window on each successful
+ * @c transport_send() call.  Used to compute the progress percentage.
+ * Rewound by @ref act_crc_nack when a sector is retransmitted so the
+ * bar never shows more than 100%.
+ */
+static uint32_t segments_sent = 0;
+ 
+/**
+ * @brief Total estimated segment count across all sectors.
+ *
+ * Computed once in @ref act_build_pipeline as:
+ * @code
+ *   ceil(sector_size / segment_size) * sector_count
+ * @endcode
+ * Used as the denominator for the progress percentage.
+ */
+static uint32_t total_segments = 0;
+
+/* ====================================================================
+   Internal helpers
+   ==================================================================== */
+ 
+/**
+ * @brief Render and print the progress bar to stdout in place.
+ *
+ * Uses @c \\r (carriage return, no newline) so the line is rewritten
+ * on every call without scrolling the terminal.  Flushes stdout so
+ * the update appears immediately even without a newline.
+ *
+ * @par Example output
+ * @code
+ *   Flashing  [=========>          ]  47%  sector 9/19  0x08001200
+ * @endcode
+ *
+ * @param sectors_done  Sectors fully written and verified so far.
+ * @param total_sectors Total sectors in the pipeline.
+ * @param current_addr  Base flash address of the sector being sent.
+ */
+static void print_progress(uint32_t sectors_done,
+                            uint32_t total_sectors,
+                            uint32_t current_addr)
+{
+    /* Percentage based on segments for fine-grained resolution */
+    uint32_t pct = (total_segments > 0u)
+                 ? (segments_sent * 100u) / total_segments
+                 : 0u;
+ 
+    if (pct > 100u)
+        pct = 100u;
+ 
+    /* Build the bar string */
+    uint32_t filled = (pct * PROGRESS_BAR_WIDTH) / 100u;
+    char     bar[PROGRESS_BAR_WIDTH + 1u];
+    uint32_t i;
+ 
+    for (i = 0u; i < PROGRESS_BAR_WIDTH; i++)
+    {
+        if      (i <  filled) bar[i] = '=';
+        else if (i == filled) bar[i] = '>';
+        else                  bar[i] = ' ';
+    }
+    bar[PROGRESS_BAR_WIDTH] = '\0';
+ 
+    /* Overwrite the current terminal line */
+    printf("\r  Flashing  [%s]  %3u%%  sector %u/%u  0x%08X   ",
+           bar, pct, sectors_done, total_sectors, current_addr);
+ 
+    fflush(stdout);
+}
 
 /* ====================================================================
    act_fsm_signal_generation
    ==================================================================== */
  
 /**
- * @brief Poll the RX queue and convert packets to FSM events.
+ * @brief Poll the RX queue and dispatch FSM events.
  *
- * This function is called from the main loop on every iteration.
- * It attempts to dequeue one packet from @c handle_queue_receive_packets.
- * When a packet is found its @c command field is matched against the
- * known response codes defined in @c bl_protocol_config.h, and the
- * corresponding FSM event is dispatched via @c fsm_dispatch().
+ * Called from the main loop on every iteration.  Dequeues one packet,
+ * maps its @c command byte to the appropriate event, and dispatches it.
  *
- * The mapping is:
- *  - @c RESP_TARGET_INFO   → @c EVT_TARGET_INFO  (packet forwarded as event data)
+ * @par Command → event mapping
+ *  - @c RESP_TARGET_INFO   → @c EVT_TARGET_INFO  (packet in event data)
  *  - @c RESP_SEG_ACK       → @c EVT_SEG_ACK
  *  - @c RESP_CRC_ACK       → @c EVT_CRC_OK
  *  - @c RESP_CRC_NACK      → @c EVT_CRC_NACK
@@ -83,20 +163,14 @@ static comm_packet_t tx_pkt;
  *
  * @param fsm  Pointer to the bootloader FSM instance.
  *
- * @note For @c RESP_TARGET_INFO the packet is copied into a fresh heap
- *       allocation and attached to the event's @c data pointer so that
- *       @ref act_target_info can read it.  For all other responses the
- *       original packet is freed immediately after dispatch.
+ * @note The dequeued packet is always freed after event dispatch.
  */
 void act_fsm_signal_generation(fsm_t *fsm)
 {
     void *msg = NULL;
  
-    /* Nothing in the queue this cycle — return immediately */
     if (!queue_try_pop(&handle_queue_receive_packets, &msg))
-    {
         return;
-    }
  
     comm_packet_t *pkt = (comm_packet_t *)msg;
  
@@ -104,217 +178,166 @@ void act_fsm_signal_generation(fsm_t *fsm)
     {
         case RESP_TARGET_INFO:
         {
-            /* Forward the packet payload to act_target_info via event data.
-               A separate heap copy is made so the original queue allocation
-               can be freed unconditionally below. */
             fsm_event_t *evt = fsm_event_create(EVT_TARGET_INFO, NULL);
- 
             evt->data = malloc(sizeof(comm_packet_t));
             memcpy(evt->data, pkt, sizeof(comm_packet_t));
- 
             fsm_dispatch(fsm, evt);
             break;
         }
  
         case RESP_SEG_ACK:
-            /* Segment received and buffered by the target */
             fsm_dispatch(fsm, fsm_event_create(EVT_SEG_ACK, NULL));
             break;
  
         case RESP_CRC_ACK:
-            /* Target successfully wrote and verified the sector */
             fsm_dispatch(fsm, fsm_event_create(EVT_CRC_OK, NULL));
             break;
  
         case RESP_CRC_NACK:
-            /* Target rejected the sector (CRC mismatch or write error) */
             fsm_dispatch(fsm, fsm_event_create(EVT_CRC_NACK, NULL));
             break;
  
         case RESP_APP_JUMP_ACK:
-            /* Target confirmed the application start command */
             fsm_dispatch(fsm, fsm_event_create(EVT_APP_ACK, NULL));
             break;
  
         default:
-            /* Unknown or unsupported response — discard silently */
             break;
     }
  
-    /* Always release the original queue packet after processing */
     free(pkt);
 }
-
-
+ 
+ 
 /* ====================================================================
    act_send_reset
    ==================================================================== */
  
 /**
- * @brief Transmit a reset request to the target bootloader.
+ * @brief Transmit @c CMD_RESET_REQ to the target bootloader.
  *
- * Builds a @c CMD_RESET_REQ packet with a single data byte set to
- * @c FLAG_SET and sends it through the active transport layer.
- *
- * After this call the FSM waits in @c ST_SEND_RESET for the target to
- * boot its bootloader and respond with @c RESP_TARGET_INFO.
- *
- * @param e    FSM event that triggered this transition.  Unused here
- *             but required by the @ref fsm_action_t signature.
- * @param fsm  Pointer to the bootloader FSM instance.
+ * @param e    Triggering event.  Unused.
+ * @param fsm  Pointer to the FSM instance.
  */
 void act_send_reset(fsm_event_t *e, fsm_t *fsm)
 {
-    /* Populate the reset request packet */
     tx_pkt.command  = CMD_RESET_REQ;
     tx_pkt.length   = 1;
     tx_pkt.data[0]  = FLAG_SET;
  
     if (transport_send(&tx_pkt) > 0)
     {
-        printf("[ HOST -> TARGET ] Reset Request sent\n");
-        fileio_printf(&handle_log_file, "[ HOST -> TARGET ] Reset Request sent\n");
+        printf("[ Re-BOOT ] Connecting to target ...\n");
+        fileio_printf(&handle_log_file,
+                      "[RESET] CMD_RESET_REQ sent\n");
     }
     else
     {
-        printf("[ ERR ] [ HOST -> TARGET ] Reset Request send failed\n");
+        printf("[ ERR ] Failed to send reset request\n");
         fileio_printf(&handle_log_file,
-                      "[ ERR ] [ HOST -> TARGET ] Reset Request send failed\n");
+                      "[ERR ] CMD_RESET_REQ send failed\n");
     }
 }
-
-
+ 
+ 
 /* ====================================================================
    act_target_info
    ==================================================================== */
  
 /**
- * @brief Parse a RESP_TARGET_INFO packet and initialise the context.
+ * @brief Parse @c RESP_TARGET_INFO and initialise the bootloader context.
  *
- * The target info payload is exactly 8 bytes with the following layout:
+ * Extracts flash start address, sector size, and segment size from
+ * the 8-byte payload and stores them in @ref bootloader_ctx_t.
+ * Dispatches @c EVT_START to trigger pipeline construction.
+ *
+ * @par Payload layout
  * @code
- *  Byte  0–3 : Flash start address (big-endian uint32)
- *  Byte  4–5 : Sector size in bytes (big-endian uint16)
- *  Byte  6–7 : Segment size in bytes (big-endian uint16)
+ *  Byte 0–3 : Flash start address   (big-endian uint32)
+ *  Byte 4–5 : Sector size in bytes  (big-endian uint16)
+ *  Byte 6–7 : Segment size in bytes (big-endian uint16)
  * @endcode
  *
- * The extracted values are written into @ref bootloader_ctx_t so that
- * all subsequent action functions can access the target's parameters
- * without re-parsing the packet.
- *
- * @c EVT_START is dispatched at the end of a successful parse to
- * trigger the transition to @c ST_BUILD_PIPELINE.
- *
- * @param e    FSM event whose @c data field points to a heap-allocated
- *             @ref comm_packet_t containing the RESP_TARGET_INFO payload.
- *             This function frees that allocation before returning.
- * @param fsm  Pointer to the bootloader FSM instance.
- *
- * @retval void  On payload length mismatch or NULL packet the function
- *               logs the error and returns without dispatching any event,
- *               leaving the FSM stalled in @c ST_SEND_RESET.
+ * @param e    Event whose @c data field holds a heap-allocated copy
+ *             of the received @ref comm_packet_t.
+ * @param fsm  Pointer to the FSM instance.
  */
 void act_target_info(fsm_event_t *e, fsm_t *fsm)
 {
     comm_packet_t *pkt = (comm_packet_t *)e->data;
  
-    /* Guard against a NULL payload — should not happen under normal
-       operation but protects against queue corruption */
     if (pkt == NULL)
     {
         printf("[ ERR ] Target info packet is NULL\n");
-        fileio_printf(&handle_log_file, "[ ERR ] Target info packet is NULL\n");
+        fileio_printf(&handle_log_file, "[ERR ] RESP_TARGET_INFO is NULL\n");
         return;
     }
  
-    /* Validate the expected payload length (4 addr + 2 sector + 2 segment) */
     if (pkt->length != 8)
     {
         printf("[ ERR ] Target info length mismatch: got %u, expected 8\n",
                pkt->length);
         fileio_printf(&handle_log_file,
-                      "[ ERR ] Target info length mismatch: got %u expected 8\n",
+                      "[ERR ] RESP_TARGET_INFO length=%u (expected 8)\n",
                       pkt->length);
- 
         free(pkt);
         return;
     }
  
-    /* ---- Unpack big-endian fields ---------------------------------- */
- 
-    /** Flash start address — informational only at this stage */
     uint32_t flash_addr =
         ((uint32_t)pkt->data[0] << 24) |
         ((uint32_t)pkt->data[1] << 16) |
         ((uint32_t)pkt->data[2] <<  8) |
         ((uint32_t)pkt->data[3]);
  
-    /** Sector size: how many bytes the target writes per erase+program */
     uint16_t sector_size  = ((uint16_t)pkt->data[4] << 8) | pkt->data[5];
- 
-    /** Segment size: maximum payload per CMD_PIPELINE_DATA packet */
     uint16_t segment_size = ((uint16_t)pkt->data[6] << 8) | pkt->data[7];
  
-    /* ---- Log the received parameters ------------------------------- */
-    printf("[ TARGET -> HOST ] Target Info received\n");
-    printf("[ TARGET ] Flash start address : 0x%08X\n",  flash_addr);
-    printf("[ TARGET ] Sector size         : %u bytes\n", sector_size);
-    printf("[ TARGET ] Segment size        : %u bytes\n", segment_size);
+    /* Console: one clean info block */
+    printf("[ Re-BOOT ] Target connected\n");
+    printf("            Flash start : 0x%08X\n", flash_addr);
+    printf("            Sector size : %u bytes\n", sector_size);
+    printf("            Segment size: %u bytes\n\n", segment_size);
  
+    /* Log: full detail */
     fileio_printf(&handle_log_file,
-                  "[ TARGET -> HOST ] Target Info received\n");
-    fileio_printf(&handle_log_file,
-                  "[ TARGET ] Flash=0x%08X  sector=%u  segment=%u\n",
+                  "[TARGET] flash=0x%08X  sector=%u B  segment=%u B\n",
                   flash_addr, sector_size, segment_size);
  
-    /* ---- Persist parameters in context for all subsequent stages --- */
     bootloader_ctx_t *ctx = CTX(fsm);
     ctx->sector_size   = sector_size;
     ctx->segment_size  = segment_size;
     ctx->retry_count   = 0;
     ctx->max_retries   = MAX_RETRY;
  
-    /* Release the heap copy made in act_fsm_signal_generation */
     free(pkt);
  
-    /* Move to pipeline construction */
     fsm_dispatch(fsm, fsm_event_create(EVT_START, NULL));
 }
-
-
+ 
+ 
 /* ====================================================================
    act_build_pipeline
    ==================================================================== */
  
 /**
- * @brief Organise the parsed HEX records into flash sectors.
+ * @brief Build the firmware transfer pipeline from parsed HEX records.
  *
- * Calls @c pipeline_build() with the full HEX record array and the
- * sector size received from the target.  After this call the pipeline
- * holds a sorted array of @ref sector_pipeline_t entries, each
- * containing the data bytes and a validity bitmap for one sector of
- * flash memory.
+ * Calls @c pipeline_build() to create sector-aligned data buffers.
+ * Computes @c total_segments so the progress bar has an accurate
+ * denominator for the entire session.
  *
- * The sector index and byte offset in the context are both reset to 0
- * so that transmission starts from the very first sector.
- *
- * @c EVT_START is dispatched to move the FSM into @c ST_SEND_WINDOW
- * and begin the first segment transmission.
- *
- * @param e    FSM event that triggered this transition.  Unused.
- * @param fsm  Pointer to the bootloader FSM instance.
+ * @param e    Triggering event.  Unused.
+ * @param fsm  Pointer to the FSM instance.
  */
 void act_build_pipeline(fsm_event_t *e, fsm_t *fsm)
 {
     bootloader_ctx_t *ctx = CTX(fsm);
  
-    printf("[ PIPELINE ] Building pipeline: %u records, sector=%u bytes\n",
-           ctx->record_count, ctx->sector_size);
     fileio_printf(&handle_log_file,
-                  "[ PIPELINE ] Building pipeline: %u records, sector=%u bytes\n",
-                  ctx->record_count, ctx->sector_size);
+                  "[PIPELINE] Building: %u records, sector=%u B, segment=%u B\n",
+                  ctx->record_count, ctx->sector_size, ctx->segment_size);
  
-    /* Organise HEX records into sector-aligned chunks ready for transfer */
     pipeline_build(
         &ctx->pipeline,
         ctx->records,
@@ -322,57 +345,56 @@ void act_build_pipeline(fsm_event_t *e, fsm_t *fsm)
         ctx->sector_size
     );
  
-    printf("[ PIPELINE ] Total sectors to transfer: %u\n",
-           ctx->pipeline.sector_count);
+    /* Compute total segments for progress bar denominator */
+    uint32_t segs_per_sector = (ctx->sector_size + ctx->segment_size - 1u)
+                             / ctx->segment_size;
+ 
+    total_segments = ctx->pipeline.sector_count * segs_per_sector;
+    segments_sent  = 0u;
+ 
+    /* Console: summary before the progress bar begins */
+    printf("[ Re-BOOT ] Image ready — %u sectors (~%u segments)\n\n",
+           ctx->pipeline.sector_count, total_segments);
+ 
     fileio_printf(&handle_log_file,
-                  "[ PIPELINE ] Total sectors: %u\n",
-                  ctx->pipeline.sector_count);
+                  "[PIPELINE] Built: %u sectors, ~%u total segments\n",
+                  ctx->pipeline.sector_count, total_segments);
  
-    /* Reset transmission cursors before the first sector */
-    ctx->current_sector = 0;
-    ctx->offset         = 0;
+    ctx->current_sector = 0u;
+    ctx->offset         = 0u;
  
-    /* Trigger the first segment send */
     fsm_dispatch(fsm, fsm_event_create(EVT_START, NULL));
 }
  
-
-
+ 
 /* ====================================================================
    act_send_window
    ==================================================================== */
  
 /**
- * @brief Fetch and transmit one segment of the current sector.
+ * @brief Fetch and transmit one firmware segment.
  *
- * Calls @c pipeline_next_segment() to extract the next chunk of
- * firmware bytes from the active sector, starting at @c ctx->offset.
- * The function advances @c offset internally, so successive calls
- * automatically progress through the sector without any external
- * bookkeeping.
+ * Retrieves the next chunk from the current sector via
+ * @c pipeline_next_segment() and sends it as @c CMD_PIPELINE_DATA.
  *
- * @par Packet format (CMD_PIPELINE_DATA payload)
- * @code
- *  Byte 0–3 : Absolute flash address of this segment (big-endian)
- *  Byte 4–N : Segment data bytes (up to ctx->segment_size bytes)
- * @endcode
+ * @par Console output
+ * The progress bar is updated in place with @c \\r — no per-segment
+ * line is printed so the terminal stays clean.
  *
- * If @c pipeline_next_segment() returns -1 the sector is exhausted.
- * In that case @c EVT_SECTOR_END is dispatched to transition the FSM
- * to @c ST_VERIFY, which sends the CRC and requests a sector write.
+ * @par Log file output
+ * Every segment is recorded with sector index, absolute flash address,
+ * byte count, and the first four data bytes for spot-checking.
  *
- * @param e    FSM event that triggered this transition.  Unused.
- * @param fsm  Pointer to the bootloader FSM instance.
+ * @param e    Triggering event.  Unused.
+ * @param fsm  Pointer to the FSM instance.
  */
 void act_send_window(fsm_event_t *e, fsm_t *fsm)
 {
     bootloader_ctx_t *ctx = CTX(fsm);
  
-    /* VLA sized to the target-reported segment size */
     uint8_t  seg_data[ctx->segment_size];
-    uint32_t seg_addr = 0;
+    uint32_t seg_addr = 0u;
  
-    /* Ask the pipeline for the next chunk; returns byte count or -1 */
     int len = pipeline_next_segment(
         &ctx->pipeline,
         ctx->current_sector,
@@ -384,51 +406,57 @@ void act_send_window(fsm_event_t *e, fsm_t *fsm)
  
     if (len < 0)
     {
-        /* No more valid bytes in this sector — request flash write */
-        printf("[ PIPELINE ] Sector %u: all segments sent, requesting verify\n",
-               ctx->current_sector);
+        /* Sector exhausted — trigger CRC verify */
         fileio_printf(&handle_log_file,
-                      "[ PIPELINE ] Sector %u: all segments sent\n",
+                      "[SECTOR %u] All segments sent — requesting verify\n",
                       ctx->current_sector);
  
         fsm_dispatch(fsm, fsm_event_create(EVT_SECTOR_END, NULL));
         return;
     }
  
-    /* ---- Build CMD_PIPELINE_DATA packet ----------------------------- */
- 
+    /* Build and send CMD_PIPELINE_DATA */
     tx_pkt.command  = CMD_PIPELINE_DATA;
-    tx_pkt.length   = 4 + (uint16_t)len;   /* 4-byte address + data */
- 
-    /* Pack destination address in big-endian order */
+    tx_pkt.length   = 4u + (uint16_t)len;
     tx_pkt.data[0]  = (seg_addr >> 24) & 0xFF;
     tx_pkt.data[1]  = (seg_addr >> 16) & 0xFF;
     tx_pkt.data[2]  = (seg_addr >>  8) & 0xFF;
     tx_pkt.data[3]  = (seg_addr >>  0) & 0xFF;
- 
-    /* Append the data bytes immediately after the address */
     memcpy(&tx_pkt.data[4], seg_data, (size_t)len);
  
     if (transport_send(&tx_pkt) > 0)
     {
-        printf("[ HOST -> TARGET ] Segment addr=0x%08X  len=%d bytes\n",
-               seg_addr, len);
+        segments_sent++;
+ 
+        /* Console: update the progress bar in place */
+        uint32_t sector_base =
+            ctx->pipeline.sectors[ctx->current_sector].base_addr;
+ 
+        print_progress(ctx->current_sector,
+                       ctx->pipeline.sector_count,
+                       sector_base);
+ 
+        /* Log: full segment record */
         fileio_printf(&handle_log_file,
-                      "[ HOST -> TARGET ] Segment addr=0x%08X len=%d\n",
-                      seg_addr, len);
+                    "[SEG TX ] sector=%u  addr=0x%08X  len=%3d B  data=[%02X %02X %02X %02X ...]  total_sent=%u\n",
+                    ctx->current_sector, seg_addr, len,
+                    (len > 0) ? seg_data[0] : 0u,
+                    (len > 1) ? seg_data[1] : 0u,
+                    (len > 2) ? seg_data[2] : 0u,
+                    (len > 3) ? seg_data[3] : 0u,
+                    segments_sent);
     }
     else
     {
-        printf("[ ERR ] [ HOST -> TARGET ] Segment send failed at 0x%08X\n",
-               seg_addr);
+        /* Print on a new line so the error does not clobber the bar */
+        printf("\n[ ERR ] Segment send failed at 0x%08X\n", seg_addr);
         fileio_printf(&handle_log_file,
-                      "[ ERR ] Segment send failed at 0x%08X\n", seg_addr);
+                      "[ERR ] SEG TX failed sector=%u addr=0x%08X\n",
+                      ctx->current_sector, seg_addr);
     }
- 
-    /* FSM now waits in ST_SEND_WINDOW for RESP_SEG_ACK before continuing */
 }
-
-
+ 
+ 
 /* ====================================================================
    act_seg_ack
    ==================================================================== */
@@ -436,61 +464,57 @@ void act_send_window(fsm_event_t *e, fsm_t *fsm)
 /**
  * @brief Handle a segment acknowledgement from the target.
  *
- * The target has buffered the last segment successfully.  Dispatch
- * @c EVT_START to re-enter @ref act_send_window and transmit the
- * next segment (or discover that the sector is complete).
+ * The target has buffered the last segment.  Dispatches @c EVT_START
+ * to trigger the next segment send.
  *
- * @param e    FSM event that triggered this transition.  Unused.
- * @param fsm  Pointer to the bootloader FSM instance.
+ * @par Console output
+ * None — the progress bar updates on the next @ref act_send_window
+ * call.  Printing one ACK line per segment would flood the terminal.
+ *
+ * @par Log file output
+ * One line recording the cumulative segment count at ACK time.
+ *
+ * @param e    Triggering event.  Unused.
+ * @param fsm  Pointer to the FSM instance.
  */
 void act_seg_ack(fsm_event_t *e, fsm_t *fsm)
 {
-    printf("[ TARGET -> HOST ] Segment ACK — sending next segment\n");
     fileio_printf(&handle_log_file,
-                  "[ TARGET -> HOST ] Segment ACK\n");
+                  "[SEG ACK] cumulative segments sent: %u\n",
+                  segments_sent);
  
-    /* Continue with the next segment in the current sector */
     fsm_dispatch(fsm, fsm_event_create(EVT_START, NULL));
 }
-
-
+ 
+ 
 /* ====================================================================
    act_crc_verify
    ==================================================================== */
  
 /**
- * @brief Send a sector write + CRC verification request.
+ * @brief Send the sector write + CRC verification request.
  *
- * This action is triggered after all segments of the current sector
- * have been transmitted and acknowledged.  It computes the CRC32 of
- * the complete sector using @c pipeline_sector_crc() and sends it to
- * the target inside a @c CMD_PIPELINE_VERIFY packet.
+ * Computes CRC32 of the full sector buffer via @c pipeline_sector_crc()
+ * and transmits it in @c CMD_PIPELINE_VERIFY.
  *
- * Upon receiving this command the target:
- *  1. Programs the buffered data into flash.
- *  2. Reads back the written sector.
- *  3. Computes its own CRC32 and compares it to the received value.
- *  4. Replies with @c RESP_CRC_ACK on success or @c RESP_CRC_NACK
- *     on any mismatch or programming error.
+ * @par Console output
+ * A @c \\n terminates the progress bar line, then a "Verifying …"
+ * line is printed so the operator knows a flash write is in progress.
  *
- * @par CMD_PIPELINE_VERIFY payload layout
- * @code
- *  Byte 0–3 : CRC32 of the sector data (big-endian)
- * @endcode
+ * @par Log file output
+ * Sector index, base address, and CRC32 value.
  *
- * @param e    FSM event that triggered this transition.  Unused.
- * @param fsm  Pointer to the bootloader FSM instance.
+ * @param e    Triggering event.  Unused.
+ * @param fsm  Pointer to the FSM instance.
  */
 void act_crc_verify(fsm_event_t *e, fsm_t *fsm)
 {
     bootloader_ctx_t *ctx = CTX(fsm);
  
-    /* Compute CRC32 over the complete sector data in the pipeline */
     uint32_t crc = pipeline_sector_crc(&ctx->pipeline, ctx->current_sector);
  
-    /* Build the verify packet with the CRC in big-endian order */
     tx_pkt.command  = CMD_PIPELINE_VERIFY;
-    tx_pkt.length   = 4;
+    tx_pkt.length   = 4u;
     tx_pkt.data[0]  = (crc >> 24) & 0xFF;
     tx_pkt.data[1]  = (crc >> 16) & 0xFF;
     tx_pkt.data[2]  = (crc >>  8) & 0xFF;
@@ -498,43 +522,45 @@ void act_crc_verify(fsm_event_t *e, fsm_t *fsm)
  
     if (transport_send(&tx_pkt) > 0)
     {
-        printf("[ HOST -> TARGET ] Sector %u verify  CRC=0x%08X\n",
-               ctx->current_sector, crc);
+        uint32_t sector_base =
+            ctx->pipeline.sectors[ctx->current_sector].base_addr;
+ 
+        /* End the progress bar line, then show the verify operation */
+        printf("\r  Verifying  sector %2u  0x%08X  CRC32=0x%08X ...%-20s",
+            ctx->current_sector, sector_base, crc, "");
+        fflush(stdout);
+ 
         fileio_printf(&handle_log_file,
-                      "[ HOST -> TARGET ] Sector %u verify CRC=0x%08X\n",
-                      ctx->current_sector, crc);
+                      "[VERIFY ] sector=%u  addr=0x%08X  CRC32=0x%08X\n",
+                      ctx->current_sector, sector_base, crc);
     }
     else
     {
-        printf("[ ERR ] Sector verify send failed for sector %u\n",
+        printf("\n[ ERR ] Sector %u verify send failed\n",
                ctx->current_sector);
         fileio_printf(&handle_log_file,
-                      "[ ERR ] Sector verify send failed sector %u\n",
+                      "[ERR ] VERIFY send failed sector=%u\n",
                       ctx->current_sector);
     }
- 
-    /* FSM waits in ST_VERIFY for RESP_CRC_ACK or RESP_CRC_NACK */
 }
-
+ 
+ 
 /* ====================================================================
    act_crc_nack
    ==================================================================== */
  
 /**
- * @brief Handle a sector write NACK and schedule a retransmission.
+ * @brief Handle a sector write NACK and retransmit the sector.
  *
- * The target reported that the sector could not be written or the
- * CRC comparison failed.  This function increments @c retry_count
- * and, if the limit has not been exceeded, resets the sector byte
- * offset to 0 and dispatches @c EVT_START so that @ref act_send_window
- * retransmits the entire sector from its first segment.
+ * Increments the retry counter.  If the limit has not been reached,
+ * resets the sector offset and segment counter so the progress bar
+ * does not over-count retransmitted segments, then dispatches
+ * @c EVT_START to retransmit from byte 0.
  *
- * If @c retry_count reaches @c max_retries the FSM is halted by
- * clearing @c fsm->fsm_running, which causes the main loop to exit
- * on the next iteration.
+ * If @c retry_count reaches @c max_retries the FSM is halted.
  *
- * @param e    FSM event that triggered this transition.  Unused.
- * @param fsm  Pointer to the bootloader FSM instance.
+ * @param e    Triggering event.  Unused.
+ * @param fsm  Pointer to the FSM instance.
  */
 void act_crc_nack(fsm_event_t *e, fsm_t *fsm)
 {
@@ -542,148 +568,175 @@ void act_crc_nack(fsm_event_t *e, fsm_t *fsm)
  
     ctx->retry_count++;
  
-    printf("[ TARGET -> HOST ] Sector %u NACK  (attempt %u / %u)\n",
+    printf("  [ WARN ] Sector %u NACK — retry %u / %u\n",
            ctx->current_sector, ctx->retry_count, ctx->max_retries);
+ 
     fileio_printf(&handle_log_file,
-                  "[ TARGET -> HOST ] Sector %u NACK attempt %u/%u\n",
+                  "[NACK   ] sector=%u  retry=%u/%u\n",
                   ctx->current_sector, ctx->retry_count, ctx->max_retries);
  
     if (ctx->retry_count >= ctx->max_retries)
     {
-        /* Exhausted retries — abort the entire firmware update */
-        printf("[ ERR ] Max retries (%u) reached for sector %u. Aborting.\n",
-               ctx->max_retries, ctx->current_sector);
+        printf("[ ERR ] Max retries reached on sector %u — aborting\n",
+               ctx->current_sector);
         fileio_printf(&handle_log_file,
-                      "[ ERR ] Max retries reached sector %u. Aborting.\n",
-                      ctx->current_sector);
+                      "[ERR ] Sector %u: max retries (%u) exceeded — abort\n",
+                      ctx->current_sector, ctx->max_retries);
  
         fsm->fsm_running = FLAG_RESET;
         return;
     }
  
-    /* Reset the sector offset so the next EVT_START re-sends from byte 0 */
-    ctx->offset = 0;
+    /* Rewind sector offset so retransmission starts from byte 0 */
+    ctx->offset = 0u;
  
-    printf("[ PIPELINE ] Retransmitting sector %u from the beginning\n",
-           ctx->current_sector);
+    /* Rewind the segment counter so the progress bar stays accurate */
+    uint32_t segs_per_sector = (ctx->sector_size + ctx->segment_size - 1u)
+                             / ctx->segment_size;
+ 
+    if (segments_sent >= segs_per_sector)
+        segments_sent -= segs_per_sector;
+    else
+        segments_sent = 0u;
+ 
     fileio_printf(&handle_log_file,
-                  "[ PIPELINE ] Retransmitting sector %u\n",
+                  "[NACK   ] Retransmitting sector %u from byte 0\n",
                   ctx->current_sector);
  
     fsm_dispatch(fsm, fsm_event_create(EVT_START, NULL));
 }
-
+ 
+ 
 /* ====================================================================
    act_next_sector
    ==================================================================== */
  
 /**
- * @brief Advance the transfer cursor to the next flash sector.
+ * @brief Advance to the next sector after a successful write.
  *
- * Called after @c RESP_CRC_ACK confirms that the current sector was
- * programmed successfully.  The function:
- *  - Resets @c retry_count to 0 for the new sector.
- *  - Resets @c offset to 0 so transmission starts at the first byte.
- *  - Increments @c current_sector.
- *  - Dispatches @c EVT_ALL_SECTORS_DONE when the last sector is done,
- *    or @c EVT_START to begin the next sector's segment transmission.
+ * Resets per-sector state and either begins the next sector or
+ * signals that all sectors are done.
  *
- * @param e    FSM event that triggered this transition.  Unused.
- * @param fsm  Pointer to the bootloader FSM instance.
+ * @par Console output
+ * A single "OK" confirmation line showing the verified sector address,
+ * then the progress bar immediately resumes for the next sector.
+ *
+ * @par Log file output
+ * Sector written confirmation with address and progress fraction.
+ *
+ * @param e    Triggering event.  Unused.
+ * @param fsm  Pointer to the FSM instance.
  */
 void act_next_sector(fsm_event_t *e, fsm_t *fsm)
 {
     bootloader_ctx_t *ctx = CTX(fsm);
  
-    /* Sector successfully written — reset per-sector state */
-    ctx->retry_count = 0;
-    ctx->offset      = 0;
-    ctx->current_sector++;
+    uint32_t sector_base =
+        ctx->pipeline.sectors[ctx->current_sector].base_addr;
  
-    printf("[ PIPELINE ] Sector write OK. Progress: %u / %u sectors done\n",
-           ctx->current_sector, ctx->pipeline.sector_count);
+    printf("\r  [ OK ]  Sector %2u  0x%08X  written and verified\n",
+           ctx->current_sector, sector_base,"");
+    fflush(stdout);
+    
     fileio_printf(&handle_log_file,
-                  "[ PIPELINE ] Sector OK. Progress %u/%u\n",
-                  ctx->current_sector, ctx->pipeline.sector_count);
+                  "[SECTOR ] sector=%u addr=0x%08X  WRITTEN OK  (%u/%u)\n",
+                  ctx->current_sector,
+                  sector_base,
+                  ctx->current_sector + 1u,
+                  ctx->pipeline.sector_count);
+ 
+    ctx->retry_count    = 0u;
+    ctx->offset         = 0u;
+    ctx->current_sector++;
  
     if (ctx->current_sector >= ctx->pipeline.sector_count)
     {
-        /* All sectors have been written — time to start the application */
-        printf("[ PIPELINE ] All sectors transferred. Sending app start...\n");
+        printf("\n[ Re-BOOT ] All sectors written — starting application ...\n");
         fileio_printf(&handle_log_file,
-                      "[ PIPELINE ] All sectors done. Sending app start.\n");
+                      "[PIPELINE] All %u sectors written — sending CMD_START_APP\n",
+                      ctx->pipeline.sector_count);
  
         fsm_dispatch(fsm, fsm_event_create(EVT_ALL_SECTORS_DONE, NULL));
     }
     else
     {
-        /* More sectors remain — loop back into ST_SEND_WINDOW */
+        fileio_printf(&handle_log_file,
+                      "[PIPELINE] Advancing to sector %u\n",
+                      ctx->current_sector);
+ 
         fsm_dispatch(fsm, fsm_event_create(EVT_START, NULL));
     }
 }
-
+ 
+ 
 /* ====================================================================
    act_app_jump
    ==================================================================== */
  
 /**
- * @brief Send the application start command to the target.
+ * @brief Send @c CMD_START_APP to the target.
  *
- * After all sectors have been written this function transmits a
- * @c CMD_START_APP packet to instruct the target bootloader to hand
- * off control to the newly programmed application firmware.
+ * Waits for @c RESP_APP_JUMP_ACK before transitioning to @c ST_DONE.
  *
- * The FSM then waits in @c ST_APP_JUMP for the target to respond
- * with @c RESP_APP_JUMP_ACK before transitioning to @c ST_DONE.
- *
- * @param e    FSM event that triggered this transition.  Unused.
- * @param fsm  Pointer to the bootloader FSM instance.
+ * @param e    Triggering event.  Unused.
+ * @param fsm  Pointer to the FSM instance.
  */
 void act_app_jump(fsm_event_t *e, fsm_t *fsm)
 {
-    /* Build the app-start command with a single affirmative data byte */
     tx_pkt.command  = CMD_START_APP;
-    tx_pkt.length   = 1;
+    tx_pkt.length   = 1u;
     tx_pkt.data[0]  = FLAG_SET;
  
     if (transport_send(&tx_pkt) > 0)
     {
-        printf("[ HOST -> TARGET ] App start command sent\n");
+        printf("[ Re-BOOT ] Application start command sent\n");
         fileio_printf(&handle_log_file,
-                      "[ HOST -> TARGET ] App start command sent\n");
+                      "[APP    ] CMD_START_APP sent\n");
     }
     else
     {
-        printf("[ ERR ] [ HOST -> TARGET ] App start command send failed\n");
+        printf("[ ERR ] Application start command failed\n");
         fileio_printf(&handle_log_file,
-                      "[ ERR ] App start command send failed\n");
+                      "[ERR   ] CMD_START_APP send failed\n");
     }
- 
-    /* FSM waits in ST_APP_JUMP for RESP_APP_JUMP_ACK */
 }
  
-
+ 
 /* ====================================================================
    act_done
    ==================================================================== */
  
 /**
- * @brief Finalise the firmware update process and stop the FSM.
+ * @brief Finalise the firmware update and stop the FSM.
  *
- * Called when @c RESP_APP_JUMP_ACK confirms that the target has
- * successfully started the new application.  Logs the completion
- * message and clears @c fsm->fsm_running, causing the main loop
- * in @c main.c to exit cleanly.
+ * Called when @c RESP_APP_JUMP_ACK confirms the target has handed
+ * control to the new application.  Forces the progress bar to 100%,
+ * prints the completion banner, and clears @c fsm->fsm_running so
+ * the main loop exits cleanly.
  *
- * @param e    FSM event that triggered this transition.  Unused.
- * @param fsm  Pointer to the bootloader FSM instance.
+ * @param e    Triggering event.  Unused.
+ * @param fsm  Pointer to the FSM instance.
  */
 void act_done(fsm_event_t *e, fsm_t *fsm)
 {
-    printf("[ DONE ] Firmware upload completed successfully!\n");
-    fileio_printf(&handle_log_file,
-                  "[ DONE ] Firmware upload completed successfully!\n");
+    bootloader_ctx_t *ctx = CTX(fsm);
  
-    /* Signal the main loop to exit */
+    /* Force 100% and redraw the bar one final time */
+    segments_sent = total_segments;
+    print_progress(ctx->pipeline.sector_count,
+                   ctx->pipeline.sector_count,
+                   ctx->pipeline.sectors[ctx->pipeline.sector_count - 1u].base_addr);
+ 
+    printf("\n\n");
+    printf("  ╔══════════════════════════════════════╗\n");
+    printf("  ║   Re-BOOT : Firmware update DONE !   ║\n");
+    printf("  ╚══════════════════════════════════════╝\n\n");
+ 
+    fileio_printf(&handle_log_file,
+                  "[DONE   ] Firmware upload complete. "
+                  "Sectors=%u  Segments=%u\n",
+                  ctx->pipeline.sector_count,
+                  segments_sent);
+ 
     fsm->fsm_running = FLAG_RESET;
 }

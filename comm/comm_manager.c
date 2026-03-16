@@ -143,8 +143,8 @@ void* comm_rx_thread(void *arg)
             /* Transfer ownership to the queue */
             queue_push(&handle_queue_receive_packets, packet_ptr);
 
-            printf("[ RX ] Queued cmd=0x%02X  len=%u\n",
-                   packet_ptr->command, packet_ptr->length);
+            // printf("[ RX ] Queued cmd=0x%02X  len=%u\n",
+            //        packet_ptr->command, packet_ptr->length);
         }
         else if (ret == -5)
         {
@@ -162,7 +162,5 @@ void* comm_rx_thread(void *arg)
         /* ret == -1 means thread was stopped — the while condition
            will catch that on the next iteration and exit cleanly. */
     }
-
-    printf("[ RX ] comm_rx_thread exiting\n");
     return NULL;
 }
