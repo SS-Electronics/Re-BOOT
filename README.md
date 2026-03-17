@@ -1,6 +1,6 @@
 # Re-BOOT
 
-A Linux host-side firmware update utility that transfers Intel HEX images to an embedded target over **Serial (UART)**, **TCP**, or **CAN** using a lightweight, event-driven bootloader protocol.
+A cross-platform host-side firmware update utility that transfers Intel HEX images to an embedded target over **Serial (UART)**, **TCP**, or **CAN** using a lightweight, event-driven bootloader protocol.
 
 ```
   ╔════════════════════════════════════════╗
