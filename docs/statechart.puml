@@ -1,0 +1,164 @@
+@startuml Re-BOOT Firmware Update FSM
+
+' ─────────────────────────────────────────────
+'  Skin / Style
+' ─────────────────────────────────────────────
+skinparam backgroundColor #FAFAFA
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 12
+
+skinparam state {
+    BackgroundColor       #EBF5FB
+    BorderColor           #2980B9
+    FontColor             #1A252F
+    FontStyle             Bold
+    ArrowColor            #2C3E50
+    ArrowFontSize         11
+    ArrowFontColor        #2C3E50
+    StartColor            #1ABC9C
+    EndColor              #E74C3C
+    AttributeFontColor    #5D6D7E
+    AttributeFontSize     10
+}
+
+skinparam note {
+    BackgroundColor   #FEF9E7
+    BorderColor       #F39C12
+    FontColor         #7D6608
+    FontSize          10
+}
+
+' ─────────────────────────────────────────────
+'  Title
+' ─────────────────────────────────────────────
+title
+  <b>Re-BOOT — Firmware Update FSM</b>
+  <size:11><color:#7F8C8D>Host-side bootloader protocol  |  src: init/fsm_table.c  &  init/fsm_actions.c</color></size>
+end title
+
+' ─────────────────────────────────────────────
+'  States
+' ─────────────────────────────────────────────
+state "ST_INIT" as INIT {
+  INIT : Idle — FSM entry point
+}
+
+state "ST_SEND_RESET" as RESET_WAIT {
+  RESET_WAIT : Waiting for target info
+  RESET_WAIT : after CMD_RESET_REQ
+}
+
+state "ST_BUILD_PIPELINE" as PIPELINE {
+  PIPELINE : Organise HEX image
+  PIPELINE : into sector-aligned buffers
+}
+
+state "ST_SEND_WINDOW" as SEND {
+  SEND : Segment transmission
+  SEND : (loops until sector exhausted)
+}
+
+state "ST_VERIFY" as VERIFY {
+  VERIFY : Sector CRC verification
+  VERIFY : Waiting for flash write result
+}
+
+state "ST_NEXT_SECTOR" as NEXT {
+  NEXT : Advance sector cursor
+  NEXT : Reset retry / offset
+}
+
+state "ST_APP_JUMP" as JUMP {
+  JUMP : Waiting for app jump ACK
+}
+
+state "ST_DONE" as DONE {
+  DONE : Firmware update complete
+  DONE : fsm_running = 0
+}
+
+state "ABORT" as ABORT #FADBD8 {
+  ABORT : fsm_running = 0
+  ABORT : Main loop exits
+}
+
+' ─────────────────────────────────────────────
+'  Happy Path
+' ─────────────────────────────────────────────
+[*] --> INIT
+
+INIT --> RESET_WAIT        : <b>EVT_START</b>\n<i>act_send_reset</i>\nTX ▶ CMD_RESET_REQ (0x10)
+
+RESET_WAIT --> PIPELINE    : <b>EVT_TARGET_INFO</b>\n<i>act_target_info</i>\nRX ◀ RESP_TARGET_INFO (0x30)\nparse: flash_addr, sector_size, segment_size\naddr-range check: PASS
+
+PIPELINE --> SEND          : <b>EVT_START</b> (auto)\n<i>act_build_pipeline</i>\npipeline_build()\ncompute total_segments
+
+SEND --> SEND              : <b>EVT_START</b>\n<i>act_send_window</i>\nTX ▶ CMD_PIPELINE_DATA (0x11)\n[first segment of sector]
+
+SEND --> SEND              : <b>EVT_SEG_ACK</b>\n<i>act_send_window</i>\nRX ◀ RESP_SEG_ACK (0x31)\nTX ▶ CMD_PIPELINE_DATA (0x11)\n[next segment]
+
+SEND --> VERIFY            : <b>EVT_SECTOR_END</b>\n<i>act_crc_verify</i>\npipeline_sector_crc()\nTX ▶ CMD_PIPELINE_VERIFY (0x13)
+
+VERIFY --> NEXT            : <b>EVT_CRC_OK</b>\n<i>act_next_sector</i>\nRX ◀ RESP_CRC_ACK (0x33)\ncurrent_sector++, retry=0
+
+NEXT --> SEND              : <b>EVT_START</b>\n<i>act_send_window</i>\n[more sectors remain]
+
+NEXT --> JUMP              : <b>EVT_ALL_SECTORS_DONE</b>\n<i>act_app_jump</i>\nTX ▶ CMD_START_APP (0x14)
+
+JUMP --> DONE              : <b>EVT_APP_ACK</b>\n<i>act_done</i>\nRX ◀ RESP_APP_JUMP_ACK (0x37)\nprint banner
+
+DONE --> [*]
+
+' ─────────────────────────────────────────────
+'  Retry Path
+' ─────────────────────────────────────────────
+VERIFY --> SEND            : <b>EVT_CRC_NACK</b>\n<i>act_crc_nack</i>\nRX ◀ RESP_CRC_NACK (0x34)\noffset=0, retry++\n[retry < max_retries]
+
+' ─────────────────────────────────────────────
+'  Abort / Error Paths
+' ─────────────────────────────────────────────
+RESET_WAIT --> ABORT       : addr check FAIL\n(NULL pkt / length mismatch /\nhex_base < APP_START)
+
+VERIFY --> ABORT           : <b>EVT_CRC_NACK</b>\n[retry ≥ max_retries]\nmax retries exceeded
+
+ABORT --> [*]
+
+' ─────────────────────────────────────────────
+'  Protocol legend (note)
+' ─────────────────────────────────────────────
+note right of SEND
+  <b>Segment loop (inner cycle)</b>
+  ┌──────────────────────────────┐
+  │ HOST  TX ▶  CMD_PIPELINE_DATA │
+  │ TARGET RX ◀  RESP_SEG_ACK    │
+  │   (repeat per segment)        │
+  └──────────────────────────────┘
+  When pipeline_next_segment() returns
+  len < 0 → dispatches EVT_SECTOR_END
+end note
+
+note right of VERIFY
+  <b>Sector write cycle</b>
+  ┌──────────────────────────────┐
+  │ HOST  TX ▶  CMD_PIPELINE_VERIFY│
+  │ TARGET flashes buffered data  │
+  │ TARGET RX ◀  RESP_CRC_ACK    │  OK
+  │          or RESP_CRC_NACK    │  FAIL → retry
+  └──────────────────────────────┘
+  MAX_RETRY = 2  (app_config.h)
+end note
+
+note left of PIPELINE
+  <b>Pipeline build (once per session)</b>
+  ┌──────────────────────────────┐
+  │ pipeline_build()              │
+  │ sector_count  = N             │
+  │ total_segments≈ N × ⌈S/seg⌉ │
+  └──────────────────────────────┘
+  sector_size / segment_size
+  reported by target in
+  RESP_TARGET_INFO
+end note
+
+@enduml
