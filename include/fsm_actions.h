@@ -158,7 +158,16 @@ typedef struct
     uint32_t            hex_base_address;   /**< Lowest address in HEX file  */
     uint32_t            hex_end_address;    /**< One-past-last address in HEX */
 
- 
+    /**
+     * @brief Target node identifier supplied via the @c -n command-line option.
+     *
+     * Sent as the second byte of @c CMD_RESET_REQ so the target bootloader
+     * can verify it is the intended recipient.  The target echoes this value
+     * back in @c RESP_TARGET_INFO (byte 8); @ref act_target_info validates
+     * the echo and aborts if there is a mismatch.
+     */
+    int                 node_id;
+
 } bootloader_ctx_t;
 
 /* ============================================================

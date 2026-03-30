@@ -167,10 +167,11 @@ int main(int argc, char *argv[])
         
         if( status == 0)
         {
-            bootloader_context.records      = (hex_record_t *)mem_pool_hex_file_head.data;
-            bootloader_context.record_count = (uint32_t)hex_file_lines;
-            bootloader_context.hex_base_address = (uint32_t)hex_base_address;
-            bootloader_context.hex_end_address  = hex_end_address;           
+            bootloader_context.records           = (hex_record_t *)mem_pool_hex_file_head.data;
+            bootloader_context.record_count      = (uint32_t)hex_file_lines;
+            bootloader_context.hex_base_address  = (uint32_t)hex_base_address;
+            bootloader_context.hex_end_address   = hex_end_address;
+            bootloader_context.node_id           = cmds.node_id;
 
             printf("Number of HEX records created : %d! ...\n", hex_file_lines);
             fileio_printf(&handle_log_file,"Number of HEX records created : %d! ...\n", hex_file_lines);

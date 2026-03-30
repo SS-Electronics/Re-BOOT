@@ -35,8 +35,8 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
  *
  * @par Protocol sequence
  * @code
- *  1.  HOST  →  CMD_RESET_REQ        →  TARGET
- *  2.  HOST  ←  RESP_TARGET_INFO     ←  TARGET  (sector size, segment size)
+ *  1.  HOST  →  CMD_RESET_REQ        →  TARGET  (FLAG_SET, node_id)
+ *  2.  HOST  ←  RESP_TARGET_INFO     ←  TARGET  (flash addr, sector size, segment size, node_id echo)
  *  3.  HOST     builds pipeline
  *  4.  HOST  →  CMD_PIPELINE_DATA    →  TARGET  (one segment)
  *  5.  HOST  ←  RESP_SEG_ACK         ←  TARGET
@@ -155,7 +155,12 @@ static void print_progress(uint32_t sectors_done,
  * maps its @c command byte to the appropriate event, and dispatches it.
  *
  * @par Command → event mapping
- *  - @c RESP_TARGET_INFO   → @c EVT_TARGET_INFO  (packet in event data)
+ *  - @c RESP_TARGET_INFO + @c node_id → @c EVT_TARGET_INFO  (packet in event data)
+ *
+ *    The node ID is encoded in the command byte.  A packet whose command
+ *    byte does not equal @c RESP_TARGET_INFO + @c node_id is silently
+ *    discarded — it belongs to a different node on the bus.
+ *
  *  - @c RESP_SEG_ACK       → @c EVT_SEG_ACK
  *  - @c RESP_CRC_ACK       → @c EVT_CRC_OK
  *  - @c RESP_CRC_NACK      → @c EVT_CRC_NACK
@@ -168,43 +173,49 @@ static void print_progress(uint32_t sectors_done,
 void act_fsm_signal_generation(fsm_t *fsm)
 {
     void *msg = NULL;
- 
+
     if (!queue_try_pop(&handle_queue_receive_packets, &msg))
         return;
- 
-    comm_packet_t *pkt = (comm_packet_t *)msg;
- 
-    switch (pkt->command)
+
+    comm_packet_t *pkt    = (comm_packet_t *)msg;
+    uint8_t        cmd    = pkt->command;
+    int            node   = CTX(fsm)->node_id;
+
+    /* RESP_TARGET_INFO carries the node ID in the command byte itself.
+       The expected command is a runtime value so it cannot be a case
+       label — evaluate it with an explicit comparison first. */
+    if (cmd == (uint8_t)(RESP_TARGET_INFO + node))
     {
-        case RESP_TARGET_INFO:
-        {
-            fsm_event_t *evt = fsm_event_create(EVT_TARGET_INFO, NULL);
-            evt->data = malloc(sizeof(comm_packet_t));
-            memcpy(evt->data, pkt, sizeof(comm_packet_t));
-            fsm_dispatch(fsm, evt);
-            break;
-        }
- 
-        case RESP_SEG_ACK:
-            fsm_dispatch(fsm, fsm_event_create(EVT_SEG_ACK, NULL));
-            break;
- 
-        case RESP_CRC_ACK:
-            fsm_dispatch(fsm, fsm_event_create(EVT_CRC_OK, NULL));
-            break;
- 
-        case RESP_CRC_NACK:
-            fsm_dispatch(fsm, fsm_event_create(EVT_CRC_NACK, NULL));
-            break;
- 
-        case RESP_APP_JUMP_ACK:
-            fsm_dispatch(fsm, fsm_event_create(EVT_APP_ACK, NULL));
-            break;
- 
-        default:
-            break;
+        fsm_event_t *evt = fsm_event_create(EVT_TARGET_INFO, NULL);
+        evt->data = malloc(sizeof(comm_packet_t));
+        memcpy(evt->data, pkt, sizeof(comm_packet_t));
+        fsm_dispatch(fsm, evt);
     }
- 
+    else
+    {
+        switch (cmd)
+        {
+            case RESP_SEG_ACK:
+                fsm_dispatch(fsm, fsm_event_create(EVT_SEG_ACK, NULL));
+                break;
+
+            case RESP_CRC_ACK:
+                fsm_dispatch(fsm, fsm_event_create(EVT_CRC_OK, NULL));
+                break;
+
+            case RESP_CRC_NACK:
+                fsm_dispatch(fsm, fsm_event_create(EVT_CRC_NACK, NULL));
+                break;
+
+            case RESP_APP_JUMP_ACK:
+                fsm_dispatch(fsm, fsm_event_create(EVT_APP_ACK, NULL));
+                break;
+
+            default:
+                break;
+        }
+    }
+
     free(pkt);
 }
  
@@ -216,26 +227,46 @@ void act_fsm_signal_generation(fsm_t *fsm)
 /**
  * @brief Transmit @c CMD_RESET_REQ to the target bootloader.
  *
+ * The command byte is @c CMD_RESET_REQ + @c node_id so the target
+ * can identify itself as the intended recipient without inspecting
+ * the payload.
+ *
+ * @par Wire format
+ * @code
+ *  Command : CMD_RESET_REQ + node_id
+ *  Byte 0  : FLAG_SET
+ * @endcode
+ *
+ * The target echoes the node ID back as part of the command byte
+ * in @c RESP_TARGET_INFO + @c node_id, which is validated in
+ * @ref act_fsm_signal_generation before the event is dispatched.
+ *
  * @param e    Triggering event.  Unused.
  * @param fsm  Pointer to the FSM instance.
  */
 void act_send_reset(fsm_event_t *e, fsm_t *fsm)
 {
-    tx_pkt.command  = CMD_RESET_REQ;
+    bootloader_ctx_t *ctx = CTX(fsm);
+
+    tx_pkt.command  = (uint8_t)(CMD_RESET_REQ + ctx->node_id);
     tx_pkt.length   = 1;
     tx_pkt.data[0]  = FLAG_SET;
- 
+
     if (transport_send(&tx_pkt) > 0)
     {
-        printf("[ Re-BOOT ] Connecting to target ...\n");
+        printf("[ Re-BOOT ] Connecting to target (node %d) ...\n",
+               ctx->node_id);
         fileio_printf(&handle_log_file,
-                      "[RESET] CMD_RESET_REQ sent\n");
+                      "[RESET] CMD_RESET_REQ+%d (0x%02X) sent\n",
+                      ctx->node_id,
+                      tx_pkt.command);
     }
     else
     {
         printf("[ ERR ] Failed to send reset request\n");
         fileio_printf(&handle_log_file,
-                      "[ERR ] CMD_RESET_REQ send failed\n");
+                      "[ERR ] CMD_RESET_REQ+%d send failed\n",
+                      ctx->node_id);
     }
 }
  
@@ -257,6 +288,11 @@ void act_send_reset(fsm_event_t *e, fsm_t *fsm)
  *  Byte 4–5 : Sector size in bytes  (big-endian uint16)
  *  Byte 6–7 : Segment size in bytes (big-endian uint16)
  * @endcode
+ *
+ * Node ID filtering is performed upstream in @ref act_fsm_signal_generation
+ * by matching the command byte against @c RESP_TARGET_INFO + @c node_id,
+ * so by the time this function is called the packet is already confirmed
+ * to belong to the correct node.
  *
  * @param e    Event whose @c data field holds a heap-allocated copy
  *             of the received @ref comm_packet_t.
@@ -324,7 +360,7 @@ void act_target_info(fsm_event_t *e, fsm_t *fsm)
     ================================================================ */
 
     /* Print info first so the operator always sees what was received */
-    printf("[ Re-BOOT ] Target connected\n");
+    printf("[ Re-BOOT ] Target connected  (node %d)\n", ctx->node_id);
     printf("            Flash start : 0x%08X\n", flash_addr);
     printf("            Sector size : %u bytes\n", sector_size);
     printf("            Segment size: %u bytes\n", segment_size);
@@ -332,8 +368,8 @@ void act_target_info(fsm_event_t *e, fsm_t *fsm)
            ctx->hex_base_address, ctx->hex_end_address);
 
     fileio_printf(&handle_log_file,
-                  "[TARGET] flash=0x%08X  sector=%u B  segment=%u B\n",
-                  flash_addr, sector_size, segment_size);
+                  "[TARGET] node_id=%d  flash=0x%08X  sector=%u B  segment=%u B\n",
+                  ctx->node_id, flash_addr, sector_size, segment_size);
     fileio_printf(&handle_log_file,
                   "[TARGET] HEX range 0x%08X -> 0x%08X\n",
                   ctx->hex_base_address, ctx->hex_end_address);
