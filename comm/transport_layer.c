@@ -52,11 +52,11 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 
 /**
  * @file transport_layer.c
- * @brief Driver-independent packet framing for Serial, TCP, and CAN-over-Serial.
+ * @brief Driver-independent packet framing for Serial, TCP, UDP, and CAN-over-Serial.
  *
  * @par Supported frame formats
  *
- * @b Serial / TCP — byte-stream framing with CRC16 integrity check:
+ * @b Serial / TCP / UDP — byte-stream framing with CRC16 integrity check:
  * @code
  *  ┌─────┬─────┬───────┬───────┬──────────────┬───────┬───────┐
  *  │ ':' │ CMD │ LEN_H │ LEN_L │ DATA[0..N-1] │ CRC_H │ CRC_L │
@@ -64,6 +64,12 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
  *    1 B   1 B    1 B     1 B       N bytes      1 B     1 B
  * @endcode
  * CRC16-CCITT computed over CMD + LEN_H + LEN_L + DATA.
+ *
+ * UDP uses the identical frame layout as TCP.  Each call to
+ * @c drv_udp_tx() sends one complete framed packet as a single
+ * datagram.  @c drv_udp_rx() reads one datagram at a time; the
+ * byte-wise state machine then parses the bytes within that
+ * datagram in the same way as the Serial and TCP paths.
  *
  * @b CAN-over-Serial — compact framing over the USB-CAN adapter virtual port:
  * @code
@@ -94,6 +100,7 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <string.h>
+#include "drv_udp.h"
 
 
 /* ====================================================================
@@ -109,10 +116,13 @@ static drv_serial_t handle_serial_driver;
 /** @brief TCP driver handle.  Used for @c TCP mode only. */
 static drv_tcp_t    handle_tcp_driver;
 
+/** @brief UDP driver handle.  Used for @c UDP mode only. */
+static drv_udp_t    handle_udp_driver;
+
 /**
  * @brief Active driver type selector.
  *
- * Set to @c SERIAL, @c TCP, or @c CAN by @c transport_init().
+ * Set to @c SERIAL, @c TCP, @c UDP, or @c CAN by @c transport_init().
  * 0 = not initialised.
  */
 static uint32_t driver_type = 0;
@@ -241,6 +251,8 @@ static uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
  * Interface selection via @c cmds->interface string:
  *  - @c "serial" — opens @c cmds->ip as a serial port at 115200 baud.
  *  - @c "tcp"    — connects TCP to @c cmds->ip : @c cmds->port.
+ *  - @c "udp"    — opens a UDP socket aimed at @c cmds->ip : @c cmds->port.
+ *                  Uses the same frame format as TCP (CRC16-CCITT appended).
  *  - @c "can"    — opens @c cmds->ip as a serial port at 115200 baud.
  *                  Uses the same @c drv_serial driver as "serial" because
  *                  the USB-CAN adapter appears as a virtual COM port.
@@ -255,7 +267,7 @@ int transport_init(cmd_args_t *cmds)
     if (cmds->interface == NULL)
     {
         printf("[ ERR ] Communication interface not provided!\n");
-        printf("Use: '-c serial', '-c tcp', or '-c can'\n");
+        printf("Use: '-c serial', '-c tcp', '-c udp', or '-c can'\n");
         return -1;
     }
 
@@ -283,6 +295,18 @@ int transport_init(cmd_args_t *cmds)
         driver_type = TCP;
         return drv_tcp_open(&handle_tcp_driver, cmds->ip, cmds->port);
     }
+    else if (strcmp(cmds->interface, "udp") == 0)
+    {
+        if (cmds->ip == NULL)
+        {
+            printf("[ ERR ] UDP IP/port not specified.\n");
+            printf("Use: '-i 192.168.0.1 -p 5000'\n");
+            return -1;
+        }
+
+        driver_type = UDP;
+        return drv_udp_open(&handle_udp_driver, cmds->ip, cmds->port);
+    }
     else if (strcmp(cmds->interface, "can") == 0)
     {
         if (cmds->ip == NULL)
@@ -300,7 +324,7 @@ int transport_init(cmd_args_t *cmds)
     else
     {
         printf("[ ERR ] Unknown interface '%s'.\n", cmds->interface);
-        printf("Use: '-c serial', '-c tcp', or '-c can'\n");
+        printf("Use: '-c serial', '-c tcp', '-c udp', or '-c can'\n");
         return -1;
     }
 }
@@ -325,6 +349,8 @@ void transport_close(cmd_args_t *cmds)
         drv_serial_close(&handle_serial_driver);
     else if (driver_type == TCP)
         drv_tcp_close(&handle_tcp_driver);
+    else if (driver_type == UDP)
+        drv_udp_close(&handle_udp_driver);
 
     driver_type = 0;
 }
@@ -337,11 +363,12 @@ void transport_close(cmd_args_t *cmds)
 /**
  * @brief Encode and transmit one packet through the active transport.
  *
- * @par Serial / TCP path
+ * @par Serial / TCP / UDP path
  * @code
  *  ':' | CMD(1B) | LEN_H(1B) | LEN_L(1B) | DATA(NB) | CRC_H(1B) | CRC_L(1B)
  * @endcode
  * CRC16-CCITT appended over CMD + LEN_H + LEN_L + DATA.
+ * For UDP, the complete framed packet is delivered as a single datagram.
  *
  * @par CAN path
  * @code
@@ -428,6 +455,9 @@ int transport_send(comm_packet_t *pkt)
     if (driver_type == TCP)
         return drv_tcp_tx(&handle_tcp_driver, frame, pos);
 
+    if (driver_type == UDP)
+        return drv_udp_tx(&handle_udp_driver, frame, pos);
+
     return -1;
 }
 
@@ -442,8 +472,11 @@ int transport_send(comm_packet_t *pkt)
  * Spins until a complete valid packet arrives or the thread stop flag
  * is cleared.
  *
- * @par Serial / TCP parser  (7 states)
+ * @par Serial / TCP / UDP parser  (7 states)
  * Reconstructs packets from the byte stream and validates CRC16.
+ * For UDP each @c drv_udp_rx() call returns one complete datagram;
+ * the byte-wise parser then processes the bytes within that datagram
+ * in the same way as the Serial and TCP paths.
  * State is preserved in module-level variables across calls.
  *
  * @par CAN parser  (4 states)
@@ -481,6 +514,8 @@ int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
             n = drv_serial_rx(&handle_serial_driver, &byte, 1);
         else if (driver_type == TCP)
             n = drv_tcp_rx(&handle_tcp_driver, &byte, 1);
+        else if (driver_type == UDP)
+            n = drv_udp_rx(&handle_udp_driver, &byte, 1);
 
         if (n <= 0)
             continue;
@@ -688,9 +723,10 @@ int transport_receive(comm_packet_t *pkt, int32_t *thread_running_flag)
 /**
  * @brief Flush stale bytes from the receive buffer.
  *
- * Drains the hardware FIFO until the driver returns 0.  Resets both
- * the Serial/TCP parser and the CAN parser unconditionally so the next
- * call to @c transport_receive() always starts from a clean state.
+ * Drains the hardware FIFO (or UDP socket receive buffer) until the
+ * driver returns 0.  Resets both the Serial/TCP/UDP parser and the
+ * CAN parser unconditionally so the next call to
+ * @c transport_receive() always starts from a clean state.
  *
  * @return 0 always.
  */
@@ -710,6 +746,13 @@ int transport_flush(void)
         while (drv_tcp_rx(&handle_tcp_driver, &tmp, 1) > 0)
         {
             /* discard stale bytes */
+        }
+    }
+    else if (driver_type == UDP)
+    {
+        while (drv_udp_rx(&handle_udp_driver, &tmp, 1) > 0)
+        {
+            /* discard stale datagrams */
         }
     }
 

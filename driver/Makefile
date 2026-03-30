@@ -29,3 +29,4 @@
 obj-y += driver/drv_file_write.o
 obj-y += driver/drv_serial.o
 obj-y += driver/drv_tcp.o
+obj-y += driver/drv_udp.o

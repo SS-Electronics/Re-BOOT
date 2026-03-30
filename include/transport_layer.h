@@ -36,6 +36,7 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
  * Supported drivers:
  *  - Serial (drv_serial)
  *  - TCP    (drv_tcp)
+ *  - UDP    (drv_udp)
  *
  * The transport layer is responsible for:
  *  - Initializing the communication driver
@@ -46,13 +47,14 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
  * Typical architecture:
  *
  * @code
- *          FSM / Protocol Layer
- *                 │
- *                 ▼
- *           Transport Layer
- *         ┌────────┴────────┐
- *         ▼                 ▼
- *     Serial Driver      TCP Driver
+ *           FSM / Protocol Layer
+ *                  │
+ *                  ▼
+ *            Transport Layer
+ *         ┌───────┼───────┐
+ *         ▼       ▼       ▼
+ *      Serial   TCP     UDP
+ *      Driver  Driver  Driver
  * @endcode
  */
 
@@ -62,6 +64,7 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 #include "app_types.h"
 #include "drv_serial.h"
 #include "drv_tcp.h"
+#include "drv_udp.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,7 +75,8 @@ extern "C" {
  * @defgroup TRANSPORT_LAYER Transport Layer
  * @brief Generic communication transport abstraction
  *
- * Provides driver-independent packet communication.
+ * Provides driver-independent packet communication over
+ * Serial, TCP, UDP, and CAN interfaces.
  *
  * @{
  */
@@ -88,6 +92,7 @@ extern "C" {
  *
  * - Open a serial port
  * - Connect to a TCP server
+ * - Open a UDP socket
  *
  * @param[in] cmds
  * Pointer to command argument structure containing
@@ -138,7 +143,7 @@ void transport_close(cmd_args_t *cmds);
  *  - CRC       : CRC16-CCITT calculated over CMD + LEN + DATA
  *
  * The function automatically routes the frame to the active
- * driver (Serial or TCP).
+ * driver (Serial, TCP, or UDP).
  *
  * @param[in] pkt Pointer to communication packet structure.
  *

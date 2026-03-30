@@ -39,8 +39,9 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
  * @brief Communication Types
  */
 #define SERIAL 1
-#define TCP 2
-#define CAN 3
+#define TCP    2
+#define CAN    3
+#define UDP    4
 
 #define CAN_MAX_PAYLOAD 8
 /**
