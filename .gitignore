@@ -70,7 +70,6 @@ gmon.out
 # Editor / IDE files
 ############################################################
 
-.vscode/
 .idea/
 *.code-workspace
 
