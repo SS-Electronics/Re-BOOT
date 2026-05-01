@@ -40,6 +40,10 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 
 #include "threads.h"
 
+#if defined(__linux__)
+#include <time.h>
+#endif
+
 #if defined(_WIN32) || defined(_WIN64)
 
 /**
@@ -206,7 +210,8 @@ void thread_sleep(uint32_t ms)
 {
 
 #if defined(__linux__)
-    usleep(ms * 1000);
+    struct timespec ts = { ms / 1000, (ms % 1000) * 1000000L };
+    nanosleep(&ts, NULL);
 #elif defined(_WIN32) || defined(_WIN64)
     Sleep(ms);
 #endif
