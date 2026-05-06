@@ -1,0 +1,49 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-linux:
+    name: Linux (x86-64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential gcc
+
+      - name: Build
+        run: make OS=Linux
+
+      - name: Verify binary
+        run: test -f re-boot && echo "Binary OK"
+
+  build-docs:
+    name: Doxygen Docs
+    runs-on: ubuntu-latest
+    needs: build-linux
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Doxygen
+        run: sudo apt-get update && sudo apt-get install -y doxygen
+
+      - name: Generate docs
+        run: doxygen Doxyfile
+
+      - name: Verify index.html
+        run: test -f docs/index.html && echo "Docs OK"
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: doxygen-docs
+          path: docs/

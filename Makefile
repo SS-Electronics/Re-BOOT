@@ -196,8 +196,8 @@ DOXYGEN ?= doxygen
 # Doxygen configuration file
 DOXYFILE ?= Doxyfile
 
-# Documentation output directory (must match Doxyfile OUTPUT_DIRECTORY)
-DOC_DIR ?= docs/generated
+# Documentation output directory (must match Doxyfile OUTPUT_DIRECTORY + HTML_OUTPUT)
+DOC_DIR ?= docs
 
 .PHONY: docs clean-docs
 
@@ -209,10 +209,11 @@ docs:
 	$(DOXYGEN) $(DOXYFILE)
 	@echo "Documentation generated in $(DOC_DIR)/html"
 
-# Clean generated documentation
+# Clean generated documentation (keep docs/ folder, remove only generated files)
 clean-docs:
 	@echo "Cleaning documentation..."
-	@rm -rf $(DOC_DIR)/html
+	@find $(DOC_DIR) -maxdepth 1 -name "*.html" -o -name "*.js" -o -name "*.css" \
+	    -o -name "*.png" -o -name "search" | xargs rm -rf
 	@echo "Documentation cleaned."
 
 

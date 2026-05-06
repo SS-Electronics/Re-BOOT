@@ -136,7 +136,8 @@ int parse_arguments(int argc, char *argv[], cmd_args_t *args)
  */
 int32_t get_file_size(char* const file_name)
 {
-    char ch;
+    int ch;         /* must be int: fgetc returns EOF=-1, which is lost
+                       if stored in unsigned char (default on ARM) */
     uint32_t lines = 0;
 
     if (file_name == NULL)
@@ -152,7 +153,7 @@ int32_t get_file_size(char* const file_name)
     }
 
     printf("File: %s\n", file_name);
-    printf("File Size: %ld bytes\n", hex_file_stat.st_size);
+    printf("File Size: %lld bytes\n", (long long)hex_file_stat.st_size);
     printf("Last modification: %s", ctime(&hex_file_stat.st_mtime));
 
     if ((hex_file_stat.st_mode & S_IRUSR) == FLAG_RESET)

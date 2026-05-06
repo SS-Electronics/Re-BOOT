@@ -10,22 +10,23 @@ EXTRACT_ALL            = YES
 EXTRACT_PRIVATE        = YES
 EXTRACT_STATIC         = YES
 FULL_PATH_NAMES        = NO
-STRIP_FROM_PATH        = ./include
+STRIP_FROM_PATH        = ./
 
 #-----------------------------------------------------------
 # Input settings
 #-----------------------------------------------------------
-INPUT                  = ./include ./kernel ./mm
+INPUT                  = ./include ./config ./init ./comm ./driver ./utility ./thread
 FILE_PATTERNS          = *.h *.c
 RECURSIVE              = YES
-EXCLUDE                = 
+EXCLUDE                =
 EXCLUDE_SYMLINKS       = NO
+USE_MDFILE_AS_MAINPAGE = README.md
 
 #-----------------------------------------------------------
 # Build-related settings
 #-----------------------------------------------------------
 GENERATE_HTML          = YES
-HTML_OUTPUT            = html
+HTML_OUTPUT            = .
 GENERATE_LATEX         = NO
 GENERATE_RTF           = NO
 GENERATE_MAN           = NO
@@ -43,7 +44,6 @@ INLINE_SOURCES         = YES
 SOURCE_BROWSER         = YES
 REFERENCES_RELATION    = YES
 REFERENCES_LINK_SOURCE = YES
-USE_MDFILE_AS_MAINPAGE = 
 
 #-----------------------------------------------------------
 # Grouping and diagrams
@@ -58,7 +58,7 @@ INCLUDED_BY_GRAPH      = NO
 #-----------------------------------------------------------
 # File extension handling
 #-----------------------------------------------------------
-EXTENSION_MAPPING      = 
+EXTENSION_MAPPING      =
 MARKDOWN_SUPPORT       = YES
 
 #-----------------------------------------------------------
@@ -66,9 +66,9 @@ MARKDOWN_SUPPORT       = YES
 #-----------------------------------------------------------
 MACRO_EXPANSION        = YES
 EXPAND_ONLY_PREDEF     = NO
-PREDEFINED             = 
+PREDEFINED             =
 
 #-----------------------------------------------------------
 # Misc
 #-----------------------------------------------------------
-GENERATE_TAGFILE       = 
+GENERATE_TAGFILE       =

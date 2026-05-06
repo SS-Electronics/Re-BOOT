@@ -1,5 +1,11 @@
 # Re-BOOT
 
+[![Build](https://github.com/SS-Electronics/Re-BOOT/actions/workflows/build.yml/badge.svg)](https://github.com/SS-Electronics/Re-BOOT/actions/workflows/build.yml)
+[![Issues](https://img.shields.io/github/issues/SS-Electronics/Re-BOOT)](https://github.com/SS-Electronics/Re-BOOT/issues)
+[![Language](https://img.shields.io/badge/Language-C-blue.svg)](https://en.wikipedia.org/wiki/C_(programming_language))
+[![Type](https://img.shields.io/badge/Type-Bootloader-orange.svg)](https://github.com/SS-Electronics/Re-BOOT)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 A cross-platform host-side firmware update utility that transfers Intel HEX images to an embedded target over **Serial (UART)**, **TCP**, **UDP**, or **CAN** using a lightweight, event-driven bootloader protocol.
 
 ```
