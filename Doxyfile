@@ -15,7 +15,7 @@ STRIP_FROM_PATH        = ./
 #-----------------------------------------------------------
 # Input settings
 #-----------------------------------------------------------
-INPUT                  = ./include ./config ./init ./comm ./driver ./utility ./thread
+INPUT                  = README.md ./include ./config ./init ./comm ./driver ./utility ./thread
 FILE_PATTERNS          = *.h *.c
 RECURSIVE              = YES
 EXCLUDE                =
@@ -51,7 +51,6 @@ REFERENCES_LINK_SOURCE = YES
 HAVE_DOT               = NO
 CALL_GRAPH             = NO
 CALLER_GRAPH           = NO
-CLASS_DIAGRAMS         = NO
 INCLUDE_GRAPH          = NO
 INCLUDED_BY_GRAPH      = NO
 

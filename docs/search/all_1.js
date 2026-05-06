@@ -1,0 +1,25 @@
+var searchData=
+[
+  ['a_20—_20cross_20compile_20on_20linux_20recommended_0',['Option A — Cross-compile on Linux (recommended)',['../index.html#autotoc_md30',1,'']]],
+  ['ack_5fseq_1',['ack_seq',['../structsliding__window__t.html#a9e4e9697c424c2d8a9e23329ee28a80d',1,'sliding_window_t']]],
+  ['act_5fapp_5fjump_2',['act_app_jump',['../fsm__actions_8h.html#a30fa40702d745f994126b95b320a7c00',1,'act_app_jump(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8c.html#a30fa40702d745f994126b95b320a7c00',1,'act_app_jump(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['act_5fbuild_5fpipeline_3',['act_build_pipeline',['../fsm__actions_8h.html#aba0118faa3daf9d227b5b869424ad919',1,'act_build_pipeline(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8c.html#aba0118faa3daf9d227b5b869424ad919',1,'act_build_pipeline(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['act_5fcrc_5fnack_4',['act_crc_nack',['../fsm__actions_8h.html#ac14459aacecc1aa151e5bb87facb231e',1,'act_crc_nack(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8c.html#ac14459aacecc1aa151e5bb87facb231e',1,'act_crc_nack(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['act_5fcrc_5fverify_5',['act_crc_verify',['../fsm__actions_8h.html#a12525684e33416b92838113633d75a4b',1,'act_crc_verify(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8c.html#a12525684e33416b92838113633d75a4b',1,'act_crc_verify(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['act_5fdone_6',['act_done',['../fsm__actions_8c.html#a2ef549a7b19fed9cadb435c290506d42',1,'act_done(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8h.html#a2ef549a7b19fed9cadb435c290506d42',1,'act_done(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['act_5ffsm_5fsignal_5fgeneration_7',['act_fsm_signal_generation',['../fsm__actions_8c.html#a845d0596483165c3cebda4f8ed027548',1,'act_fsm_signal_generation(fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8h.html#a845d0596483165c3cebda4f8ed027548',1,'act_fsm_signal_generation(fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['act_5fnext_5fsector_8',['act_next_sector',['../fsm__actions_8h.html#a581ee2a66815a3f4c6cb3b5facb6565c',1,'act_next_sector(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8c.html#a581ee2a66815a3f4c6cb3b5facb6565c',1,'act_next_sector(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['act_5fseg_5fack_9',['act_seg_ack',['../fsm__actions_8h.html#ad56cda874c74637b07d460636080332e',1,'act_seg_ack(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8c.html#ad56cda874c74637b07d460636080332e',1,'act_seg_ack(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['act_5fsend_5freset_10',['act_send_reset',['../fsm__actions_8h.html#aa08ea3d9e1f52c7781e2d23cacf2b74b',1,'act_send_reset(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8c.html#aa08ea3d9e1f52c7781e2d23cacf2b74b',1,'act_send_reset(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['act_5fsend_5fwindow_11',['act_send_window',['../fsm__actions_8h.html#a8bcb6c3eba916f7d74b24d39ea749320',1,'act_send_window(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8c.html#a8bcb6c3eba916f7d74b24d39ea749320',1,'act_send_window(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['act_5ftarget_5finfo_12',['act_target_info',['../fsm__actions_8c.html#af11304f737d76098b2f37e16515c1c47',1,'act_target_info(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c'],['../fsm__actions_8h.html#af11304f737d76098b2f37e16515c1c47',1,'act_target_info(fsm_event_t *e, fsm_t *fsm):&#160;fsm_actions.c']]],
+  ['action_13',['action',['../structfsm__transition__t.html#a5826bce8d0a3ed79179a20ad3f756242',1,'fsm_transition_t']]],
+  ['address_14',['address',['../structhex__record__t.html#a83f2680cdeb941a400125163c6e62c24',1,'hex_record_t']]],
+  ['api_15',['api',['../group__fileio.html',1,'File I/O API'],['../group__thread.html',1,'Thread API']]],
+  ['api_20documentation_16',['Doxygen API Documentation',['../index.html#autotoc_md34',1,'']]],
+  ['app_5fconfig_2eh_17',['app_config.h',['../app__config_8h.html',1,'']]],
+  ['app_5frunning_18',['app_running',['../main_8c.html#a89c82ab5569e49681a0d398b9b2f6656',1,'main.c']]],
+  ['app_5ftypes_2eh_19',['app_types.h',['../app__types_8h.html',1,'']]],
+  ['architecture_20overview_20',['Architecture Overview',['../index.html#autotoc_md8',1,'']]],
+  ['arguments_21',['Arguments',['../index.html#autotoc_md37',1,'']]]
+];

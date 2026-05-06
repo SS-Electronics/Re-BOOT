@@ -34,7 +34,7 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 #include <wchar.h>
 #include <signal.h>
 
-/* ERROR List: https://www.chromium.org/chromium-os/developer-library/reference/linux-constants/errnos/*/
+/* ERROR List: https://www.chromium.org/chromium-os/developer-library/reference/linux-constants/errnos/ */
 #include <errno.h>
 #include "app_config.h"
 
