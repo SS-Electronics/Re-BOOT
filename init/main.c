@@ -44,7 +44,7 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
 /**
  * @brief Operation related local variables
  */
-static int32_t          app_running = FLAG_SET;
+static volatile sig_atomic_t app_running = FLAG_SET;
 static int32_t          status;
 static cmd_args_t       cmds;
 static int32_t          hex_file_lines;
@@ -145,6 +145,13 @@ int main(int argc, char *argv[])
         /** Get the file size and based on that the memory pool will be created */
         hex_file_lines = get_file_size(cmds.file_path);
 
+        if (hex_file_lines <= 0)
+        {
+            printf("[ ERR ] HEX file is empty or contains no data records. Exiting...\n");
+            fileio_printf(&handle_log_file, "[ ERR ] HEX file empty — abort\n");
+            goto exit;
+        }
+
         /** Memory pool create for store each hex line recors */
         status = create_mem_pool( &mem_pool_hex_file_head, (hex_file_lines * sizeof(hex_record_t)) );
 
@@ -221,14 +228,16 @@ int main(int argc, char *argv[])
     /** Any case it will come this point to exit */
     exit:
 
-    /** Wait for child thread to exit */
     comm_thread_running = FLAG_RESET;
-    thread_join(&handle_comm_rx_thread);
 
-
-
-    /** Close Tansport Layer  */
+    /** Close transport FIRST so any blocked read()/recv() in the comm
+        thread returns immediately — then join can complete promptly.
+        On Raspberry Pi UART the VTIME timeout is unreliable; without
+        closing the fd here, thread_join blocks forever on Ctrl+C. */
     transport_close(&cmds);
+
+    /** Wait for child thread to exit */
+    thread_join(&handle_comm_rx_thread);
 
     /* Terminate the queues */
     queue_destroy(&handle_queue_receive_packets);
