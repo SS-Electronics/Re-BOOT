@@ -138,58 +138,59 @@ int32_t get_file_size(char* const file_name)
 {
     char ch;
     uint32_t lines = 0;
-    
-    hex_file_ptr = fopen(file_name, "r");
 
-    if( file_name != NULL)
+    if (file_name == NULL)
+        return 0;
+
+    /* Stat before open: lets us check file type and size before touching
+       the fd. On Raspberry Pi, fopen() on a char device (e.g. a symlink
+       to /dev/ttyAMA0) or a FIFO makes fgetc() block forever. */
+    if (stat(file_name, &hex_file_stat) < 0)
     {
-        if( stat(file_name, &hex_file_stat) < 0)
-        {
-            printf("[ ERR ] File stat info not found!\n");
-            
-            return 0;
-        }
-        else
-        {
-            printf("File: %s\n", file_name);
-            printf("File Size: %ld bytes\n", hex_file_stat.st_size);
-            printf("Last modification: %s", ctime(&hex_file_stat.st_mtime));
-            
-            if((hex_file_stat.st_mode & S_IRUSR) == FLAG_RESET)
-            {
-                printf("[ ERR ] User has no file read prmission!\n");
-
-                return 0;
-            }
-            else
-            {
-                if(hex_file_ptr != NULL)
-                {
-                    while ((ch = fgetc(hex_file_ptr)) != EOF)
-                    {
-                        if (ch == '\n')
-                        {
-                            lines++;
-                        }    
-                    }
-                }
-
-                fclose(hex_file_ptr);
-
-                printf("Total Lines %u\n", lines);
-                fileio_printf(&handle_log_file,"Total Lines %u\n", lines);
-                return (int32_t)lines;
-            }
-        }
-    }
-    else
-    {
-        fclose(hex_file_ptr);
-
+        printf("[ ERR ] File stat info not found!\n");
         return 0;
     }
 
-    
+    printf("File: %s\n", file_name);
+    printf("File Size: %ld bytes\n", hex_file_stat.st_size);
+    printf("Last modification: %s", ctime(&hex_file_stat.st_mtime));
+
+    if ((hex_file_stat.st_mode & S_IRUSR) == FLAG_RESET)
+    {
+        printf("[ ERR ] User has no file read permission!\n");
+        return 0;
+    }
+
+    if (!S_ISREG(hex_file_stat.st_mode))
+    {
+        printf("[ ERR ] Not a regular file!\n");
+        return 0;
+    }
+
+    if (hex_file_stat.st_size == 0)
+    {
+        printf("[ ERR ] File is empty (0 bytes). Nothing to flash.\n");
+        return 0;
+    }
+
+    hex_file_ptr = fopen(file_name, "r");
+    if (hex_file_ptr == NULL)
+    {
+        printf("[ ERR ] Cannot open file for reading!\n");
+        return 0;
+    }
+
+    while ((ch = fgetc(hex_file_ptr)) != EOF)
+    {
+        if (ch == '\n')
+            lines++;
+    }
+
+    fclose(hex_file_ptr);
+
+    printf("Total Lines %u\n", lines);
+    fileio_printf(&handle_log_file, "Total Lines %u\n", lines);
+    return (int32_t)lines;
 }
 
 
