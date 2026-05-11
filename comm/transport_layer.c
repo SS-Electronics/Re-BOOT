@@ -355,6 +355,14 @@ void transport_close(cmd_args_t *cmds)
     driver_type = 0;
 }
 
+/**
+ * @brief Return the active transport type.
+ * @return One of @c SERIAL, @c TCP, @c UDP, @c CAN (from app_config.h).
+ */
+uint32_t transport_get_type(void)
+{
+    return driver_type;
+}
 
 /* ====================================================================
    transport_send

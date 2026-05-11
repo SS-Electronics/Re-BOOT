@@ -421,6 +421,20 @@ void act_target_info(fsm_event_t *e, fsm_t *fsm)
     /* Store parameters and proceed */
     ctx->sector_size   = sector_size;
     ctx->segment_size  = segment_size;
+
+    /* CMD_PIPELINE_DATA carries a 4-byte address header before the data.
+       A classic CAN frame is limited to CAN_MAX_PAYLOAD (8) bytes total,
+       so only (CAN_MAX_PAYLOAD - 4) bytes of firmware data fit per frame.
+       Override the target-reported segment_size when running over CAN. */
+    if (transport_get_type() == CAN &&
+        ctx->segment_size > (uint16_t)(CAN_MAX_PAYLOAD - 4u))
+    {
+        printf("[ CAN  ] Segment size clamped %u → %u bytes "
+               "(CAN_MAX_PAYLOAD - 4-byte addr header)\n",
+               ctx->segment_size, CAN_MAX_PAYLOAD - 4u);
+        ctx->segment_size = (uint16_t)(CAN_MAX_PAYLOAD - 4u);
+    }
+
     ctx->retry_count   = 0;
     ctx->max_retries   = MAX_RETRY;
 

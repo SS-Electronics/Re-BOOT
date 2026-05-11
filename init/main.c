@@ -124,7 +124,6 @@ int main(int argc, char *argv[])
     {
         /** Transport Layer Driver Initialization  */
         status = transport_init(&cmds);
-        transport_flush();
 
         if(status != 0)
         {
@@ -133,6 +132,8 @@ int main(int argc, char *argv[])
 
             goto exit;
         }
+
+        transport_flush();
 
         /** Start the log file writing  */
         if( fileio_open(&handle_log_file, "./re-boot.log", FILEIO_WRITE) != EXIT_SUCCESS )

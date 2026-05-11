@@ -39,6 +39,9 @@ along with Re-BOOT. If not, see <https://www.gnu.org/licenses/>.
  * appropriate platform-specific code.
  */
 
+/* Required for CRTSCTS (hardware flow control flag) on Linux */
+#define _GNU_SOURCE
+
 #include "drv_serial.h"
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -216,9 +219,22 @@ int drv_serial_open(drv_serial_t *ctx,
     if(tcgetattr(ctx->fd, &tty) != 0)
         return -1;
 
-    /* Set baud rate (currently fixed to 115200) */
-    cfsetospeed(&tty, B115200);
-    cfsetispeed(&tty, B115200);
+    /* Map baudrate value to termios constant */
+    speed_t speed;
+    switch (baudrate)
+    {
+        case 9600:    speed = B9600;    break;
+        case 19200:   speed = B19200;   break;
+        case 38400:   speed = B38400;   break;
+        case 57600:   speed = B57600;   break;
+        case 115200:  speed = B115200;  break;
+        case 230400:  speed = B230400;  break;
+        case 460800:  speed = B460800;  break;
+        case 921600:  speed = B921600;  break;
+        default:      speed = B115200;  break;
+    }
+    cfsetospeed(&tty, speed);
+    cfsetispeed(&tty, speed);
 
     /* 8-bit chars */
     tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
@@ -235,9 +251,13 @@ int drv_serial_open(drv_serial_t *ctx,
     /* No hardware flow control */
     tty.c_cflag &= ~CRTSCTS;
 
-    /* Raw input */
+    /* Raw input — disable all software flow control and processing */
     tty.c_iflag &= ~(IXON | IXOFF | IXANY);
-    tty.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
+    tty.c_iflag &= ~(BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
+
+    /* Ignore break conditions and parity/framing errors so the kernel
+       does not inject NUL bytes into the binary data stream. */
+    tty.c_iflag |= (IGNBRK | IGNPAR);
 
     /* Raw output */
     tty.c_oflag = 0;

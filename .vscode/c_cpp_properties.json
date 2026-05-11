@@ -7,7 +7,8 @@
                 "${workspaceFolder}/config"
             ],
             "defines": [
-                "__linux__"
+                "__linux__",
+                "_GNU_SOURCE"
             ],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "c11",

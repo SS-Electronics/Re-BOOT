@@ -58,6 +58,7 @@ ifeq ($(OS),Linux)
 CC := gcc
 CPP := g++
 CC_EXTRA_FLAGS += -D__linux__ -pthread
+CC_LINKER_FLAGS += -lpthread
 endif
 
 
@@ -146,7 +147,7 @@ $(TARGET): $(OBJS) | $(BUILD)
 	@echo 'Linking executable for $(OS)...'
 	@echo '**********************************************'
 
-	@$(CPP) $(TARGET_SYSMBOL_DEF) $(SYMBOL_DEF) $(CC_LINKER_FLAGS) -o $@ $(OBJS)
+	@$(CPP) $(TARGET_SYSMBOL_DEF) $(SYMBOL_DEF) -o $@ $(OBJS) $(CC_LINKER_FLAGS)
 
 	@echo '##############################################'
 	@echo ' '
@@ -175,6 +176,7 @@ $(BUILD):
 
 clean:
 	@rm -rf $(BUILD)
+	@rm -f $(TARGET)
 	@echo '##############################################'
 	@echo ' '
 	@echo 'Clean completed!'

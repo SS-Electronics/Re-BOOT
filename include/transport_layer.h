@@ -200,6 +200,12 @@ int transport_receive(comm_packet_t *pkt, int32_t * thread_running_flag);
  */
 int transport_flush(void);
 
+/**
+ * @brief Return the active transport type.
+ * @return One of @c SERIAL, @c TCP, @c UDP, @c CAN (defined in app_config.h).
+ */
+uint32_t transport_get_type(void);
+
 
 /** @} */
 

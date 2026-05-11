@@ -156,8 +156,13 @@ void* comm_rx_thread(void *arg)
         }
         else if (ret == -3)
         {
-            /* Framing error (payload too large) — same recovery. */
-            printf("[ RX ] Framing error — waiting for next frame\n");
+            /* Framing error (LEN > CAN_MAX_PAYLOAD or buffer overflow).
+               Flush the serial buffer to break the cascade: after a bad
+               frame the remaining data bytes are still in the buffer and
+               likely contain another false ':' SOF, which would trigger
+               another framing error on the very next call. */
+            printf("[ RX ] Framing error — flushing buffer\n");
+            transport_flush();
         }
         /* ret == -1 means thread was stopped — the while condition
            will catch that on the next iteration and exit cleanly. */
